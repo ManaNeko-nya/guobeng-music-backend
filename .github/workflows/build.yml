@@ -42,11 +42,20 @@ jobs:
           rustc -vV
 
       - name: 安装构建工具
-        # libsqlite3-sys(bundled) 与 ring 都要编译 C 代码，没有对应的 cc 就链接不出来
+        # libsqlite3-sys(bundled) 与 ring 都要编译 C 代码，没有对应的 cc 就链接不出来。
+        # libc6-dev-arm64-cross 必须显式安装：它提供 /usr/aarch64-linux-gnu/include，
+        # 少了它交叉 gcc 会退回去用宿主机的 /usr/include，编 sqlite3.c 时直接死在
+        # bits/libc-header-start.h: No such file or directory。
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential gcc-aarch64-linux-gnu
+          sudo apt-get install -y \
+            build-essential gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          aarch64-linux-gnu-gcc --version | head -1
+          if [ ! -f /usr/aarch64-linux-gnu/include/stdio.h ]; then
+            echo "::error::缺少 aarch64 交叉 sysroot 头文件"
+            exit 1
+          fi
+          echo "交叉 sysroot 头文件就位"
 
       - name: 编译
         env:
