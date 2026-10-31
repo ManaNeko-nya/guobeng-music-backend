@@ -30,7 +30,7 @@ jobs:
           - arch: arm64
             target: aarch64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: 准备 Rust
         run: |
@@ -63,7 +63,7 @@ jobs:
           mkdir -p dist
           mv "$BIN" "dist/music-server-linux-${{ matrix.arch }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: music-server-linux-${{ matrix.arch }}
           path: dist/music-server-linux-${{ matrix.arch }}
@@ -73,7 +73,7 @@ jobs:
     name: windows-x86_64
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: 准备 Rust
         run: |
@@ -97,7 +97,7 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target\release\music-server.exe dist\music-server-windows-x86_64.exe
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: music-server-windows-x86_64
           path: dist/music-server-windows-x86_64.exe
