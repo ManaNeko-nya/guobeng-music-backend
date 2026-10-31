@@ -1,0 +1,5 @@
+# 仓库里统一按 LF 存储，检出时按平台还原
+* text=auto eol=lf
+
+# build_user.bat 是 GBK 编码的批处理，必须是 CRLF，否则 cmd 解析出错
+*.bat text eol=crlf

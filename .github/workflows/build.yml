@@ -1,0 +1,103 @@
+name: build
+
+# 触发方式：
+#   1) 网页手动跑：仓库页 -> Actions -> 左侧 build -> Run workflow
+#   2) 推 tag 自动跑：git tag v1.0 && git push origin v1.0
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: linux-${{ matrix.arch }}
+    # 私有仓库拿不到免费的 arm64 机器，所以两个架构都在 x86_64 上编。
+    # x86_64 是原生编译；arm64 用 Ubuntu 官方交叉工具链 gcc-aarch64-linux-gnu。
+    # 基础镜像 22.04：glibc 2.35，产物能覆盖 Ubuntu 22.04+ / Debian 12+ / RHEL 9+
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+            . "$HOME/.cargo/env"
+          fi
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+          rustc -vV
+
+      - name: 安装构建工具
+        # libsqlite3-sys(bundled) 与 ring 都要编译 C 代码，没有对应的 cc 就链接不出来
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-aarch64-linux-gnu
+
+      - name: 编译
+        env:
+          # 交叉链接器：编 arm64 时生效，编 x86_64 时这一行不起作用
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }}
+          BIN="target/${{ matrix.target }}/release/music-server"
+          file "$BIN"
+          ls -lh "$BIN"
+          mkdir -p dist
+          mv "$BIN" "dist/music-server-linux-${{ matrix.arch }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: music-server-linux-${{ matrix.arch }}
+          path: dist/music-server-linux-${{ matrix.arch }}
+          if-no-files-found: error
+
+  windows:
+    name: windows-x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -vV
+
+      - name: 编译
+        env:
+          # 静态链接 C 运行库，产物不依赖 VCRUNTIME140.dll
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --locked
+
+      - name: 检查产物
+        run: |
+          $exe = Get-Item target\release\music-server.exe
+          "{0}  {1} bytes" -f $exe.Name, $exe.Length
+
+      - name: 打包
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\music-server.exe dist\music-server-windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: music-server-windows-x86_64
+          path: dist/music-server-windows-x86_64.exe
+          if-no-files-found: error

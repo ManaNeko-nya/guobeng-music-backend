@@ -1,0 +1,28 @@
+# ---- 构建产物 ----
+/target
+/build.log
+/clippy.log
+
+# ---- 运行时数据：数据库、媒体、配置、口令 ----
+# 这些是「跑起来才会生成」的东西，不属于源码
+/data
+/config.json
+*.db
+*.db-wal
+*.db-shm
+secret.key
+root_password.txt
+
+# ---- 旧 Python 实现：本地留着当参考，不进仓库 ----
+/python-legacy
+
+# ---- Python 缓存 ----
+__pycache__/
+*.py[cod]
+
+# ---- 工具与编辑器 ----
+.workbuddy/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
