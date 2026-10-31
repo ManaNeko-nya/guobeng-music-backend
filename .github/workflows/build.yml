@@ -54,7 +54,8 @@ jobs:
           BIN="target/${{ matrix.target }}/release/music-server"
           file "$BIN"
           ls -lh "$BIN"
-          if ! file "$BIN" | grep -q "statically linked"; then
+          # x86_64 生成 static-pie（带 ASLR），arm64 生成 statically linked，两者都算静态
+          if ! file "$BIN" | grep -qE "statically linked|static-pie linked"; then
             echo "::error::产物不是静态链接，换了 musl 目标却没有静态化"
             exit 1
           fi
