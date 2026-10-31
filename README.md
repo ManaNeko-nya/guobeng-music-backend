@@ -100,16 +100,23 @@ music_rust/
   "allow_registration": true,
   "allow_user_audio_upload": true,
   "backend_port": 8000,
-  "frontend_port": 8080
+  "frontend_port": 8080,
+  "host": "127.0.0.1"
 }
 ```
 
 - 两个 `allow_*` 业务开关**立即生效**，无需重启；root / admin 不受上传开关限制；
-- `backend_port` 只在启动时读取，改完必须重启；
-- 端口优先级：`--port` > 环境变量 `MUSIC_SERVER_PORT` > `config.json` > 8000。
+- `backend_port` 与 `host` 只在启动时读取，改完必须重启；
+- `host` 填 `0.0.0.0` 才对外监听，默认只接受本机访问；
+- 端口优先级：`--port` > 环境变量 `MUSIC_SERVER_PORT` > `config.json` > 8000；
+- 地址优先级：`--host` > 环境变量 `MUSIC_SERVER_HOST` > `config.json` > `127.0.0.1`；
+- 缺键时按默认值补写回文件，所以文件里能看到全部可配置项；已有值不会被覆盖。
+  补写的是默认值而非本次启动的覆盖值，`--port 9000` 跑一次不会把默认端口改掉。
+- `frontend_port` 是给原 Python 网页端留的，本程序不读取。
 
 环境变量：`MUSIC_SERVER_HOST`、`MUSIC_SERVER_PORT`、`MUSIC_SERVER_SECRET_KEY`、
-`MUSIC_SERVER_ADMIN_ONLY_CREATE`、`MUSIC_SERVER_CORS_ORIGINS`、`MUSIC_SERVER_DEBUG`。
+`MUSIC_SERVER_ADMIN_ONLY_CREATE`、`MUSIC_SERVER_CORS_ORIGINS`、`MUSIC_SERVER_DEBUG`、
+`MUSIC_SERVER_DATA_DIR`、`MUSIC_SERVER_ENABLE_DOCS`。
 
 ## 主要行为
 

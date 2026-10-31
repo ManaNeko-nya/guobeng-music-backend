@@ -1,9 +1,9 @@
 //! 进程级配置：命令行 > 环境变量 > 根目录 config.json > 默认值。
 //!
 //! 只读一次：端口与数据目录改完必须重启；业务开关见 runtime_config。
+//! config.json 中缺失的键会在启动时按默认值补齐写回，避免用户看不到可选项。
 
 use std::{
-    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -23,6 +23,8 @@ pub const MAX_IMAGE_SIZE: u64 = 10 * 1024 * 1024;
 pub const MAX_AUDIO_SIZE: u64 = 1024 * 1024 * 1024;
 
 const DEFAULT_PORT: u16 = 8000;
+const DEFAULT_HOST: &str = "127.0.0.1";
+const DEFAULT_FRONTEND_PORT: u16 = 8080;
 
 #[derive(Debug, Default)]
 pub struct Overrides {
@@ -78,15 +80,16 @@ impl Settings {
                 .map_err(|err| format!("无法创建媒体目录：{err}"))?;
         }
 
-        let ports = load_ports(&base_dir);
-        let port = resolve_port(overrides.port, &ports);
+        let config = read_config_object(&base_dir.join("config.json"));
+        let port = resolve_port(overrides.port, &config);
 
         let secret_key = load_or_create_secret(&data_dir)?;
 
         let host = overrides
             .host
             .or_else(|| env_string("MUSIC_SERVER_HOST"))
-            .unwrap_or_else(|| "127.0.0.1".to_string());
+            .or_else(|| config_string(&config, "host"))
+            .unwrap_or_else(|| DEFAULT_HOST.to_string());
 
         let debug = overrides.debug || env_flag("MUSIC_SERVER_DEBUG");
         let admin_only_create = overrides.admin_only_create
@@ -167,7 +170,7 @@ fn env_path(name: &str) -> Option<PathBuf> {
 }
 
 /// 端口优先级：命令行 > MUSIC_SERVER_PORT > config.json backend_port > 8000。
-fn resolve_port(cli_port: Option<u16>, ports: &HashMap<String, u16>) -> u16 {
+fn resolve_port(cli_port: Option<u16>, config: &Map<String, Value>) -> u16 {
     if let Some(port) = cli_port {
         return port;
     }
@@ -177,10 +180,41 @@ fn resolve_port(cli_port: Option<u16>, ports: &HashMap<String, u16>) -> u16 {
             _ => tracing::error!("环境变量 MUSIC_SERVER_PORT 不是合法端口，已忽略：{raw}"),
         }
     }
-    if let Some(port) = ports.get("backend_port") {
-        return *port;
+    match config.get("backend_port") {
+        Some(value) => port_from_value(value, "backend_port").unwrap_or(DEFAULT_PORT),
+        None => DEFAULT_PORT,
     }
-    DEFAULT_PORT
+}
+
+/// 配置文件里的端口值：整数或纯数字字符串，范围 1-65535；非法值记日志后按缺失处理。
+fn port_from_value(value: &Value, key: &str) -> Option<u16> {
+    let parsed = match value {
+        Value::Number(number) => number.as_u64(),
+        Value::String(text) => text.trim().parse::<u64>().ok(),
+        _ => None,
+    };
+    match parsed {
+        Some(port) if (1..=65535).contains(&port) => Some(port as u16),
+        _ => {
+            tracing::error!("配置项 {key} 的端口必须是 1-65535 的整数，已忽略：{value}");
+            None
+        }
+    }
+}
+
+/// 配置文件里的字符串项；空白串与非法类型按缺失处理。
+fn config_string(config: &Map<String, Value>, key: &str) -> Option<String> {
+    match config.get(key) {
+        Some(Value::String(text)) => {
+            let trimmed = text.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        }
+        Some(Value::Null) | None => None,
+        Some(other) => {
+            tracing::error!("配置项 {key} 必须是字符串，已忽略：{other}");
+            None
+        }
+    }
 }
 
 pub fn read_config_object(path: &Path) -> Map<String, Value> {
@@ -204,29 +238,11 @@ pub fn read_config_object(path: &Path) -> Map<String, Value> {
     }
 }
 
-/// 读取启动端口；不创建文件。非法值报错后忽略。
-pub fn load_ports(base_dir: &Path) -> HashMap<String, u16> {
-    let mut ports = HashMap::new();
-    let map = read_config_object(&base_dir.join("config.json"));
-    for key in ["backend_port", "frontend_port"] {
-        let Some(value) = map.get(key) else { continue };
-        let parsed = match value {
-            Value::Number(number) => number.as_u64(),
-            Value::String(text) => text.trim().parse::<u64>().ok(),
-            _ => None,
-        };
-        match parsed {
-            Some(port) if (1..=65535).contains(&port) => {
-                ports.insert(key.to_string(), port as u16);
-            }
-            _ => tracing::error!("配置项 {key} 的端口必须是 1-65535 的整数，已忽略：{value}"),
-        }
-    }
-    ports
-}
-
-/// 确保唯一配置文件存在且含全部业务开关与端口键；已有值不动。
-pub fn ensure_config(base_dir: &Path, backend_port: u16) {
+/// 确保唯一配置文件存在且含全部可配置项；已有值一律不动。
+///
+/// 写入的是**默认值**而不是本次启动的实际值：命令行临时覆盖不该被固化进文件，
+/// 否则一次 `--port 9000` 会永久改掉默认端口。
+pub fn ensure_config(base_dir: &Path) {
     let path = base_dir.join("config.json");
     let existed = path.exists();
     let mut map = read_config_object(&path);
@@ -238,10 +254,13 @@ pub fn ensure_config(base_dir: &Path, backend_port: u16) {
         }
     }
     if !map.contains_key("backend_port") {
-        map.insert("backend_port".to_string(), Value::from(backend_port));
+        map.insert("backend_port".to_string(), Value::from(DEFAULT_PORT));
     }
     if !map.contains_key("frontend_port") {
-        map.insert("frontend_port".to_string(), Value::from(8080));
+        map.insert("frontend_port".to_string(), Value::from(DEFAULT_FRONTEND_PORT));
+    }
+    if !map.contains_key("host") {
+        map.insert("host".to_string(), Value::from(DEFAULT_HOST));
     }
 
     if existed && before == map {

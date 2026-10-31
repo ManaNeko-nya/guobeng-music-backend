@@ -109,7 +109,7 @@ fn run() -> Result<(), String> {
         .map_err(|err| format!("无法创建运行时：{err}"))?;
 
     runtime.block_on(async move {
-        ensure_config(&settings.base_dir, settings.port);
+        ensure_config(&settings.base_dir);
         let pool = db::init(&settings).await?;
         let account = ensure_root_account(&pool, &settings).await?;
         if let Some(account) = &account {
