@@ -15,18 +15,20 @@ env:
 jobs:
   linux:
     name: linux-${{ matrix.arch }}
-    # 私有仓库拿不到免费的 arm64 机器，所以两个架构都在 x86_64 上编。
-    # x86_64 是原生编译；arm64 用 Ubuntu 官方交叉工具链 gcc-aarch64-linux-gnu。
-    # 基础镜像 22.04：glibc 2.35，产物能覆盖 Ubuntu 22.04+ / Debian 12+ / RHEL 9+
+    # 私有仓库拿不到免费的 arm64 机器，两个架构都在 x86_64 上交叉编译。
+    # 目标选 musl 而非 gnu：完全静态链接，产物不依赖目标机的 glibc 版本，
+    # 从 CentOS 7 到最新发行版、以及 Termux 都能直接跑。
+    # cross 的官方镜像里 musl 交叉工具链是配好的（libsqlite3-sys 与 ring
+    # 都要编译 C 代码，自己搭 sysroot 容易踩头文件路径的坑）。
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86_64
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
           - arch: arm64
-            target: aarch64-unknown-linux-gnu
+            target: aarch64-unknown-linux-musl
     steps:
       - uses: actions/checkout@v4
 
@@ -41,33 +43,22 @@ jobs:
           rustup target add ${{ matrix.target }}
           rustc -vV
 
-      - name: 安装构建工具
-        # libsqlite3-sys(bundled) 与 ring 都要编译 C 代码，没有对应的 cc 就链接不出来。
-        # libc6-dev-arm64-cross 必须显式安装：它提供 /usr/aarch64-linux-gnu/include，
-        # 少了它交叉 gcc 会退回去用宿主机的 /usr/include，编 sqlite3.c 时直接死在
-        # bits/libc-header-start.h: No such file or directory。
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-          aarch64-linux-gnu-gcc --version | head -1
-          if [ ! -f /usr/aarch64-linux-gnu/include/stdio.h ]; then
-            echo "::error::缺少 aarch64 交叉 sysroot 头文件"
-            exit 1
-          fi
-          echo "交叉 sysroot 头文件就位"
+      - name: 安装 cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
 
-      - name: 编译
-        env:
-          # 交叉链接器：编 arm64 时生效，编 x86_64 时这一行不起作用
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
+      - name: 编译（静态链接）
         run: |
-          cargo build --release --locked --target ${{ matrix.target }}
+          cross build --release --locked --target ${{ matrix.target }}
           BIN="target/${{ matrix.target }}/release/music-server"
           file "$BIN"
           ls -lh "$BIN"
+          if ! file "$BIN" | grep -q "statically linked"; then
+            echo "::error::产物不是静态链接，换了 musl 目标却没有静态化"
+            exit 1
+          fi
+          echo "确认：静态链接"
           mkdir -p dist
           mv "$BIN" "dist/music-server-linux-${{ matrix.arch }}"
 

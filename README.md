@@ -47,8 +47,12 @@ Linux / macOS 直接 `cargo build --release` 即可，产物是 `target/release/
 | 产物 | 平台 | 说明 |
 |---|---|---|
 | `music-server-windows-x86_64.exe` | Windows x64 | 静态链接 C 运行库，不需要装 VCRUNTIME |
-| `music-server-linux-x86_64` | Linux x64 | 依赖 glibc ≥ 2.35（Ubuntu 22.04+ / Debian 12+ / RHEL 9+） |
+| `music-server-linux-x86_64` | Linux x64 | musl 静态链接，不依赖目标机 glibc，任何发行版通用 |
 | `music-server-linux-arm64` | Linux arm64 | 同上，交叉编译产出 |
+
+两个 Linux 产物都是 **完全静态**：CentOS 7、Ubuntu 18.04、Alpine、以及 Android 的 Termux
+都不需要额外装库。代价是不走系统的 glibc 安全更新，libc 有漏洞时要重新编译一次。
+Android 上请在 `$HOME` 下运行（`/sdcard` 是 noexec 挂载），详见脚本 `termux_install.sh`。
 
 触发方式：仓库页 **Actions** → 左侧 **build** → **Run workflow**；
 或者推一个 tag（`git tag v1.0 && git push origin v1.0`）。
