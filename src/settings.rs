@@ -24,7 +24,6 @@ pub const MAX_AUDIO_SIZE: u64 = 1024 * 1024 * 1024;
 
 const DEFAULT_PORT: u16 = 8000;
 const DEFAULT_HOST: &str = "127.0.0.1";
-const DEFAULT_FRONTEND_PORT: u16 = 8080;
 
 #[derive(Debug, Default)]
 pub struct Overrides {
@@ -255,9 +254,6 @@ pub fn ensure_config(base_dir: &Path) {
     }
     if !map.contains_key("backend_port") {
         map.insert("backend_port".to_string(), Value::from(DEFAULT_PORT));
-    }
-    if !map.contains_key("frontend_port") {
-        map.insert("frontend_port".to_string(), Value::from(DEFAULT_FRONTEND_PORT));
     }
     if !map.contains_key("host") {
         map.insert("host".to_string(), Value::from(DEFAULT_HOST));

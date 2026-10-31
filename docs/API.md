@@ -446,9 +446,12 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
     "allow_registration": true,
     "allow_user_audio_upload": true,
     "backend_port": 8000,
-    "frontend_port": 8080
+    "host": "127.0.0.1"
   }
   ```
   - 业务开关（`allow_*`）修改后立即生效；
-  - 端口只在启动时读取，优先级：命令行 `--port` > 环境变量 `MUSIC_SERVER_PORT` > 本文件 > 8000。
-- 环境变量：`MUSIC_SERVER_HOST/PORT/SECRET_KEY/ADMIN_ONLY_CREATE/CORS_ORIGINS/DEBUG`。
+  - 端口与监听地址只在启动时读取；
+    端口优先级：`--port` > `MUSIC_SERVER_PORT` > 本文件 > 8000；
+    地址优先级：`--host` > `MUSIC_SERVER_HOST` > 本文件 > `127.0.0.1`；
+  - 缺键时按默认值补写回文件，已有值不动。
+- 环境变量：`MUSIC_SERVER_HOST/PORT/SECRET_KEY/ADMIN_ONLY_CREATE/CORS_ORIGINS/DEBUG/DATA_DIR/ENABLE_DOCS`。

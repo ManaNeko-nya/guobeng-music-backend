@@ -100,7 +100,6 @@ music_rust/
   "allow_registration": true,
   "allow_user_audio_upload": true,
   "backend_port": 8000,
-  "frontend_port": 8080,
   "host": "127.0.0.1"
 }
 ```
@@ -112,7 +111,6 @@ music_rust/
 - 地址优先级：`--host` > 环境变量 `MUSIC_SERVER_HOST` > `config.json` > `127.0.0.1`；
 - 缺键时按默认值补写回文件，所以文件里能看到全部可配置项；已有值不会被覆盖。
   补写的是默认值而非本次启动的覆盖值，`--port 9000` 跑一次不会把默认端口改掉。
-- `frontend_port` 是给原 Python 网页端留的，本程序不读取。
 
 环境变量：`MUSIC_SERVER_HOST`、`MUSIC_SERVER_PORT`、`MUSIC_SERVER_SECRET_KEY`、
 `MUSIC_SERVER_ADMIN_ONLY_CREATE`、`MUSIC_SERVER_CORS_ORIGINS`、`MUSIC_SERVER_DEBUG`、
