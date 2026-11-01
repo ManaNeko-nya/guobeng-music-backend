@@ -1,8 +1,8 @@
-> **This project is fully managed by AI.** Code, documentation, build scripts and repository configuration are generated and maintained by an AI agent; humans only file requests and review results.
-
 <p align="center">
   <img src="assets/icon.png" alt="Guobeng Music Server" width="200">
 </p>
+
+> **This project is fully managed by AI.** Code, documentation, build scripts and repository configuration are generated and maintained by an AI agent; humans only file requests and review results.
 
 # Guobeng Music Server
 

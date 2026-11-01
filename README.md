@@ -1,8 +1,8 @@
-> **本项目全由 AI 管理。** 代码、文档、构建脚本与仓库配置都由 AI 代理生成并维护，人工只负责提需求与验收。
-
 <p align="center">
   <img src="assets/icon.png" alt="Guobeng Music Server" width="200">
 </p>
+
+> **本项目全由 AI 管理。** 代码、文档、构建脚本与仓库配置都由 AI 代理生成并维护，人工只负责提需求与验收。
 
 # Guobeng Music Server
 
