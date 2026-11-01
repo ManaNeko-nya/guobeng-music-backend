@@ -1,4 +1,4 @@
-# MusicServer API 文档
+# Guobeng Music Server API 文档
 
 > 版本：2.0.0 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
 >
@@ -433,7 +433,7 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
 
 ## 13. 实现说明（Rust 版）
 
-- 单二进制部署：`music-server`（Windows 为 `.exe`）+ `config.json` + `data/` 即可运行，不依赖 Python。
+- 单二进制部署：`guobeng-music-server`（Windows 为 `.exe`）+ `config.json` + `data/` 即可运行，不依赖 Python。
 - 数据库为全新 SQLite（`data/music.db`），不读取旧 Python 库；媒体目录仍为
   `data/media/{covers,avatars,audio}`。
 - 首次启动创建 root 超级管理员，随机密码写入 `data/root_password.txt` 并打印到终端；

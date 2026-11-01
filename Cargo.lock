@@ -582,6 +582,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "guobeng-music-server"
+version = "2.0.0"
+dependencies = [
+ "axum",
+ "base64",
+ "chrono",
+ "clap",
+ "hmac",
+ "jsonwebtoken",
+ "md-5",
+ "mime_guess",
+ "pbkdf2",
+ "rand",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1046,34 +1074,6 @@ name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
-
-[[package]]
-name = "music-server"
-version = "2.0.0"
-dependencies = [
- "axum",
- "base64",
- "chrono",
- "clap",
- "hmac",
- "jsonwebtoken",
- "md-5",
- "mime_guess",
- "pbkdf2",
- "rand",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "windows-sys 0.59.0",
-]
 
 [[package]]
 name = "nu-ansi-term"

@@ -12,7 +12,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use rand::RngCore;
 use serde_json::{Map, Value};
 
-pub const APP_NAME: &str = "MusicServer";
+pub const APP_NAME: &str = "Guobeng Music Server";
 pub const API_PREFIX: &str = "/api/v1";
 pub const API_VERSION: &str = "2.0.0";
 

@@ -17,7 +17,7 @@ set "GUIDE="
 
 cls
 echo.
-echo   MusicServer 构建
+echo   Guobeng Music Server 构建
 echo   --------------------------------------------------
 echo   本机默认工具链：x86_64-pc-windows-gnu + MinGW-w64
 echo.
@@ -113,7 +113,7 @@ echo.
 cargo build --release --target %TRIPLE%
 if errorlevel 1 goto :fail
 
-set "OUT=target\%TRIPLE%\release\music-server%SUFFIX%"
+set "OUT=target\%TRIPLE%\release\guobeng-music-server%SUFFIX%"
 if not exist "%OUT%" (
     echo.
     echo   构建已结束，但没有找到产物：%OUT%

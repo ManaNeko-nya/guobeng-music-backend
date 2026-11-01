@@ -1,6 +1,10 @@
 > **本项目全由 AI 管理。** 代码、文档、构建脚本与仓库配置都由 AI 代理生成并维护，人工只负责提需求与验收。
 
-# MusicServer · 个人音乐库（Rust 版）
+# Guobeng Music Server · 个人音乐库（Rust 版）
+
+<p align="center">
+  <img src="assets/icon.png" alt="项目图标" width="200">
+</p>
 
 个人音乐媒体服务器：**艺人 → 专辑 → 歌曲**、LRC 歌词、收藏列表、评论、播放历史与账户系统。
 Rust + axum + SQLite 实现，编译产物是单个可执行文件，运行不需要 Python 或任何运行时环境。
@@ -15,12 +19,12 @@ Windows 上不依赖 MSVC：工具链用 `stable-x86_64-pc-windows-gnu`，链接
 
 ```bash
 cargo build --release
-# 产物：target/release/music-server.exe
+# 产物：target/release/guobeng-music-server.exe
 
-./music-server                 # 默认 127.0.0.1:8000，数据目录 ./data
-./music-server --host 0.0.0.0 --port 8000
-./music-server --base-dir D:/music --data-dir D:/music/data
-./music-server --init-only     # 只建库、创建 root 后退出
+./guobeng-music-server                      # 默认 127.0.0.1:8000，数据目录 ./data
+./guobeng-music-server --host 0.0.0.0 --port 8000
+./guobeng-music-server --base-dir D:/music --data-dir D:/music/data
+./guobeng-music-server --init-only          # 只建库、创建 root 后退出
 ```
 
 也可以双击 `build_user.bat`：它会问目标平台（Windows / Linux / macOS）与架构（x86_64 / arm64），
@@ -37,7 +41,7 @@ rustup default stable-x86_64-pc-windows-gnu
 cargo build --release
 ```
 
-Linux / macOS 直接 `cargo build --release` 即可，产物是 `target/release/music-server`。
+Linux / macOS 直接 `cargo build --release` 即可，产物是 `target/release/guobeng-music-server`。
 
 ### 云端构建（推荐）
 
@@ -46,9 +50,9 @@ Linux / macOS 直接 `cargo build --release` 即可，产物是 `target/release/
 
 | 产物 | 平台 | 说明 |
 |---|---|---|
-| `music-server-windows-x86_64.exe` | Windows x64 | 静态链接 C 运行库，不需要装 VCRUNTIME |
-| `music-server-linux-x86_64` | Linux x64 | musl 静态链接，不依赖目标机 glibc，任何发行版通用 |
-| `music-server-linux-arm64` | Linux arm64 | 同上，交叉编译产出 |
+| `guobeng-music-server-windows-x86_64.exe` | Windows x64 | 静态链接 C 运行库，不需要装 VCRUNTIME |
+| `guobeng-music-server-linux-x86_64` | Linux x64 | musl 静态链接，不依赖目标机 glibc，任何发行版通用 |
+| `guobeng-music-server-linux-arm64` | Linux arm64 | 同上，交叉编译产出 |
 
 两个 Linux 产物都是 **完全静态**：CentOS 7、Ubuntu 18.04、Alpine、以及 Android 的 Termux
 都不需要额外装库。代价是不走系统的 glibc 安全更新，libc 有漏洞时要重新编译一次。
@@ -68,7 +72,7 @@ root 只允许本机登录（`127.0.0.1` / `::1`）。
 ## 目录结构
 
 ```
-music_rust/
+guobeng-music-server/
 ├── Cargo.toml
 ├── src/
 │   ├── main.rs            # 启动、root 引导、中间件、路由装配
@@ -86,6 +90,7 @@ music_rust/
 │   ├── media.rs           # 上传校验与落盘
 │   ├── lyrics.rs          # LRC 校验
 │   └── routes/            # auth/users/artists/albums/tracks/comments/favorites/history/files/media
+├── assets/icon.png        # 项目图标（版权归原作者，见「图标版权」）
 ├── docs/API.md            # 接口契约
 ├── .github/workflows/     # 云端构建（Windows / Linux x64 / Linux arm64）
 └── data/                  # 运行时：music.db、media/、secret.key、root_password.txt
@@ -136,3 +141,14 @@ music_rust/
 | 文档 | 不再内置 Swagger，`/docs` 是一页接口说明；完整契约在 `docs/API.md` |
 | 运维命令 | 不提供 `--seed-demo` / `--refresh-demo` / `--backfill-md5`（新库没有历史 MD5 数据） |
 | 网页端 | 未包含；原 FastAPI 网页端需要 Python 才能运行，旧代码未入库 |
+
+## 图标版权
+
+项目图标 `assets/icon.png` **版权归原作者 無题 所有**。
+
+- 原图链接：<https://www.pixiv.net/artworks/110598995>
+- 使用范围：仅作本项目标识与文档展示，不用于商业用途，未对画面作二次修改。
+- 本项目与该图片不主张任何权利，图片权利完全属于原作者。
+
+**如有侵权，请联系我们删除**：在仓库提交 issue 并注明「图标版权」，
+说明权利人身份与诉求即可；核实后会立即移除 `assets/icon.png` 及全部引用。

@@ -51,7 +51,7 @@ jobs:
       - name: 编译（静态链接）
         run: |
           cross build --release --locked --target ${{ matrix.target }}
-          BIN="target/${{ matrix.target }}/release/music-server"
+          BIN="target/${{ matrix.target }}/release/guobeng-music-server"
           file "$BIN"
           ls -lh "$BIN"
           # x86_64 生成 static-pie（带 ASLR），arm64 生成 statically linked，两者都算静态
@@ -61,12 +61,12 @@ jobs:
           fi
           echo "确认：静态链接"
           mkdir -p dist
-          mv "$BIN" "dist/music-server-linux-${{ matrix.arch }}"
+          mv "$BIN" "dist/guobeng-music-server-linux-${{ matrix.arch }}"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: music-server-linux-${{ matrix.arch }}
-          path: dist/music-server-linux-${{ matrix.arch }}
+          name: guobeng-music-server-linux-${{ matrix.arch }}
+          path: dist/guobeng-music-server-linux-${{ matrix.arch }}
           if-no-files-found: error
 
   windows:
@@ -89,16 +89,16 @@ jobs:
 
       - name: 检查产物
         run: |
-          $exe = Get-Item target\release\music-server.exe
+          $exe = Get-Item target\release\guobeng-music-server.exe
           "{0}  {1} bytes" -f $exe.Name, $exe.Length
 
       - name: 打包
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item target\release\music-server.exe dist\music-server-windows-x86_64.exe
+          Copy-Item target\release\guobeng-music-server.exe dist\guobeng-music-server-windows-x86_64.exe
 
       - uses: actions/upload-artifact@v7
         with:
-          name: music-server-windows-x86_64
-          path: dist/music-server-windows-x86_64.exe
+          name: guobeng-music-server-windows-x86_64
+          path: dist/guobeng-music-server-windows-x86_64.exe
           if-no-files-found: error

@@ -1,4 +1,4 @@
-//! MusicServer 后端（Rust 版）：艺人 / 专辑 / 歌曲 / 歌词 / 收藏 / 历史 / 账户。
+//! Guobeng Music Server 后端（Rust 版）：艺人 / 专辑 / 歌曲 / 歌词 / 收藏 / 历史 / 账户。
 
 mod db;
 mod dto;
@@ -48,7 +48,7 @@ use crate::settings::{
 use crate::state::AppState;
 
 #[derive(Debug, Parser)]
-#[command(name = "music-server", version, about = "个人音乐库后端")]
+#[command(name = "guobeng-music-server", version, about = "个人音乐库后端")]
 struct Cli {
     /// 监听地址，默认 127.0.0.1
     #[arg(long)]

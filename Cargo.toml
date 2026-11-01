@@ -1,5 +1,5 @@
 [package]
-name = "music-server"
+name = "guobeng-music-server"
 version = "2.0.0"
 edition = "2021"
 rust-version = "1.80"
@@ -7,7 +7,7 @@ description = "个人音乐库后端：艺人 / 专辑 / 歌曲 / 歌词 / 收�
 license = "MIT"
 
 [[bin]]
-name = "music-server"
+name = "guobeng-music-server"
 path = "src/main.rs"
 
 [dependencies]
