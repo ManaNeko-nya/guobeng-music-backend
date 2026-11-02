@@ -2,6 +2,13 @@
   <img src="assets/icon.png" alt="Guobeng Music Server" width="200">
 </p>
 
+<p align="center">
+  Artwork by <a href="https://www.pixiv.net/artworks/110598995">無题</a> on pixiv · Character: <b>Scaramouche</b> (<i>Genshin Impact</i>)<br>
+  The character is © HoYoverse. The name comes from his true name 雷电国崩 — <code>guobeng</code> is the pinyin of 国崩
+</p>
+
+> **Warning: AI slop.** If you hate AI, please leave now (?)
+>
 > **This project is fully managed by AI.** Code, documentation, build scripts and repository configuration are generated and maintained by an AI agent; humans only file requests and review results.
 
 # Guobeng Music Server
@@ -260,6 +267,7 @@ state on the album page with `GET /history/album/{id}/last`.
 The project icon `assets/icon.png` is **copyright of the original artist, 無题**.
 
 - Original artwork: <https://www.pixiv.net/artworks/110598995>
+- The character is **Scaramouche** from *Genshin Impact*; the character is © HoYoverse
 - Scope of use: project identity and documentation only, non-commercial, no modifications made
 - This project claims no rights to the image; all rights remain with the original artist
 

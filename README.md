@@ -2,6 +2,13 @@
   <img src="assets/icon.png" alt="Guobeng Music Server" width="200">
 </p>
 
+<p align="center">
+  图标原画 <a href="https://www.pixiv.net/artworks/110598995">無题</a>（pixiv）· 角色 <b>散兵</b>（《原神》）<br>
+  角色版权归米哈游所有。项目名取自散兵的真名「<b>雷电国崩</b>」——<code>guobeng</code> 就是「国崩」的拼音
+</p>
+
+> **AI 屑作警告！讨厌 AI 的立即退出（？）**
+>
 > **本项目全由 AI 管理。** 代码、文档、构建脚本与仓库配置都由 AI 代理生成并维护，人工只负责提需求与验收。
 
 # Guobeng Music Server
@@ -255,6 +262,7 @@ access token 30 分钟过期，用 refresh token 换新的；**旧的 refresh to
 项目图标 `assets/icon.png` **版权归原作者 無题 所有**。
 
 - 原图链接：<https://www.pixiv.net/artworks/110598995>
+- 图中角色为《原神》的**散兵**，角色版权归米哈游（HoYoverse）所有
 - 使用范围：仅作本项目标识与文档展示，不用于商业用途，未对画面作二次修改
 - 本项目与该图片不主张任何权利，图片权利完全属于原作者
 
