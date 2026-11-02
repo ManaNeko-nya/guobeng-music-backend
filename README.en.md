@@ -268,5 +268,9 @@ with your identity and request — we will remove `assets/icon.png` and every re
 
 ## License
 
-Source code is released under the MIT license. The project icon is not covered by MIT;
-see the copyright section above.
+Released under the **MIT** license — full text in [LICENSE](LICENSE). Anyone is free to
+use, modify, redistribute and sell this software without asking for permission; the only
+requirement is keeping the copyright and permission notices. No warranty of any kind.
+
+The project icon `assets/icon.png` is **not covered by MIT**; all rights belong to the
+original artist, see the copyright section above.
