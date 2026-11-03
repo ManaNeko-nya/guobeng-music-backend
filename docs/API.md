@@ -9,7 +9,7 @@
 
 | 项目 | 说明 |
 |---|---|
-| Base URL | `http://127.0.0.1:8000/api/v1` |
+| Base URL | `http://127.0.0.1:8000/api/v1`；`/health`、`/media`、`/docs` 在**根路径**，不带这个前缀 |
 | 编码 | 请求与响应均为 UTF-8 JSON（上传为 `multipart/form-data`） |
 | 认证 | `Authorization: Bearer <access_token>` |
 | 时间 | ISO 8601，UTC（如 `2026-10-20T05:30:00`）；日期为 `YYYY-MM-DD` |
@@ -395,7 +395,9 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
 
 ### 11.1 健康检查
 
-`GET /health` · 公开
+`GET /health` · 公开 · **根路径，不在 `/api/v1` 下**
+
+进程存活探针，顺带返回曲库规模，用于部署自检与监控抓取。
 
 ```json
 { "code": 0, "message": "ok",
@@ -403,9 +405,25 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
             "stats": { "artists": 6, "albums": 8, "tracks": 39, "users": 1 } } }
 ```
 
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `status` | string | 固定 `"running"`。请求能被处理就是这个值，不代表数据库之外的东西也正常 |
+| `version` | string | 服务端版本，随发布变化（当前 `2.0.0`） |
+| `debug` | bool | 是否以 `--debug` 启动 |
+| `stats` | object | `artists` / `albums` / `tracks` / `users` 四张表的行数 |
+
+以下行为此前文档没有写清，容易误判：
+
+- **不需要认证**：不带 `Authorization` 也能访问，也不受 root「仅本机」限制；
+- **`/api/v1/health` 返回 404**：它和业务接口不是同一个前缀，客户端不要拼 Base URL；
+- **数据库读不出来时不报 5xx**：任一统计查询失败，`stats` 退化成 `{}`，`status` 仍是
+  `"running"`，HTTP 仍是 200。监控要以 `stats` 是否为空来判断，不能只看状态码；
+- 只证明「进程能响应 + 数据库可读」，不检查磁盘空间、媒体目录与外部依赖；
+- 每次都实时执行四条 `COUNT(*)`，曲库很大时会有额外开销，探针间隔不要太短。
+
 ### 11.2 静态媒体
 
-`GET /media/{path}` · 公开
+`GET /media/{path}` · 公开 · **根路径**
 
 封面、头像、音频文件。支持 `Range` 请求（`206 Partial Content`），音频可拖动/断点续传。
 私有专辑只限制 JSON 接口可见性；媒体 URL 仍是随机文件名，请勿泄露私有资源链接。

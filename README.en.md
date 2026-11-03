@@ -71,7 +71,7 @@ It never needs to know what the database looks like or where files are stored.
 
 - Missing keys in `config.json` are written back with their defaults, so the file always shows every option
 - `allow_registration` and `allow_user_audio_upload` are **hot-reloaded** — no restart needed
-- `/health` for liveness, `/docs` for a one-page API reference
+- `/health` for liveness (root path, not under `/api/v1`), `/docs` for a one-page API reference
 
 ## How it differs
 

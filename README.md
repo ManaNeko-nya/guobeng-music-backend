@@ -71,7 +71,7 @@
 
 - `config.json` 缺键时按默认值补写回文件，用户能看到全部可配置项
 - `allow_registration`、`allow_user_audio_upload` **热加载**，改完即时生效不用重启
-- `/health` 健康检查，`/docs` 一页接口速查
+- `/health` 健康检查（根路径，不在 `/api/v1` 下），`/docs` 一页接口速查
 
 ## 与同类项目的区别
 
