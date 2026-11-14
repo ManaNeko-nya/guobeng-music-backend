@@ -233,10 +233,22 @@ async fn migrate_external_id_into_description(pool: &SqlitePool) -> Result<(), S
     .execute(pool)
     .await
     .map_err(|err| format!("迁移外部专辑标识失败：{err}"))?;
-    sqlx::query("DROP INDEX IF EXISTS uq_albums_external_id")
-        .execute(pool)
-        .await
-        .map_err(|err| format!("删除 external_id 索引失败：{err}"))?;
+    // Python 版遗留过多个引用该列的索引，DROP COLUMN 前必须全部清理。
+    let indexes: Vec<String> = sqlx::query_scalar(
+        "SELECT name FROM sqlite_master
+         WHERE type = 'index' AND tbl_name = 'albums'
+           AND sql IS NOT NULL AND sql LIKE '%external_id%'",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|err| format!("查询 external_id 索引失败：{err}"))?;
+    for name in indexes {
+        let quoted = name.replace('"', "\"\"");
+        sqlx::query(&format!("DROP INDEX IF EXISTS \"{quoted}\""))
+            .execute(pool)
+            .await
+            .map_err(|err| format!("删除索引 {name} 失败：{err}"))?;
+    }
     sqlx::query("ALTER TABLE albums DROP COLUMN external_id")
         .execute(pool)
         .await

@@ -1,6 +1,6 @@
 # Guobeng Music Server API 文档
 
-> 版本：2.2.0 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
+> 版本：2.2.1 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
 >
 > 音乐库层级：**艺人 Artist → 专辑 Album → 歌曲 Track**；歌词以 LRC 文本保存在歌曲上。
 > 前端服务只通过本文档的 JSON API 访问后端；安卓端同样直接调用这些接口。
@@ -184,7 +184,8 @@
 用 `GET /albums?q=kugouid965291` 判断「新建还是复用」，命中后再比对返回项即可。
 其它平台沿用同样形式（如 `neteaseid123`），不需要改表结构。
 2.2.0 起 `external_id` 字段与 `/albums/by-external/{id}` 接口已移除；旧库升级时服务端会自动把
-原有 `external_id` 写进空简介后再删列。
+原有 `external_id` 写进空简介后再删列。2.2.1 起删列前会先清理所有引用该列的遗留索引
+（Python 版建过 `ix_` 与 `uq_` 两个），否则 SQLite 会拒绝 `DROP COLUMN`。
 
 `artist_ids` 是专辑的完整艺人列表（可选）：`artist_id` 仍是主艺人，传了 `artist_ids` 时会
 一并建立 `album_artists` 关联（主艺人自动补在首位）。上传歌曲时，歌曲的艺人会自动并入专辑艺人，
@@ -434,14 +435,14 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
 
 ```json
 { "code": 0, "message": "ok",
-  "data": { "status": "running", "version": "2.2.0", "debug": false,
+  "data": { "status": "running", "version": "2.2.1", "debug": false,
             "stats": { "artists": 6, "albums": 8, "tracks": 39, "users": 1 } } }
 ```
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `status` | string | 固定 `"running"`。请求能被处理就是这个值，不代表数据库之外的东西也正常 |
-| `version` | string | 服务端版本，随发布变化（当前 `2.2.0`） |
+| `version` | string | 服务端版本，随发布变化（当前 `2.2.1`） |
 | `debug` | bool | 是否以 `--debug` 启动 |
 | `stats` | object | `artists` / `albums` / `tracks` / `users` 四张表的行数 |
 
