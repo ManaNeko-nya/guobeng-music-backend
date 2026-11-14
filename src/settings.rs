@@ -14,7 +14,7 @@ use serde_json::{Map, Value};
 
 pub const APP_NAME: &str = "Guobeng Music Server";
 pub const API_PREFIX: &str = "/api/v1";
-pub const API_VERSION: &str = "2.1.0";
+pub const API_VERSION: &str = "2.2.0";
 
 pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "flac", "wav", "m4a", "aac", "ogg", "opus"];

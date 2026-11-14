@@ -1,6 +1,6 @@
 [package]
 name = "guobeng-music-server"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
 rust-version = "1.80"
 description = "个人音乐库后端：艺人 / 专辑 / 歌曲 / 歌词 / 收藏 / 历史 / 账户"

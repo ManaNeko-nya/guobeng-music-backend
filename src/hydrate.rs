@@ -129,7 +129,6 @@ pub async fn albums_brief(
                 updated_at: to_iso(&album.updated_at),
                 artist: artists.get(&album.artist_id).cloned(),
                 artists: list,
-                external_id: album.external_id.clone(),
             },
         );
     }

@@ -49,7 +49,6 @@ pub struct AlbumRow {
     pub id: i64,
     pub artist_id: i64,
     pub title: String,
-    pub external_id: Option<String>,
     pub cover_url: Option<String>,
     pub description: Option<String>,
     pub album_type: String,

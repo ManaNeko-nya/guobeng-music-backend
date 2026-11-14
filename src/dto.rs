@@ -110,7 +110,6 @@ pub struct AlbumBrief {
     pub updated_at: String,
     pub artist: Option<ArtistBrief>,
     pub artists: Vec<ArtistBrief>,
-    pub external_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

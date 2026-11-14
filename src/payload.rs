@@ -241,8 +241,6 @@ pub struct AlbumCreate {
     #[serde(default = "default_true")]
     pub is_public: bool,
     #[serde(default)]
-    pub external_id: Option<String>,
-    #[serde(default)]
     pub artist_ids: Vec<i64>,
 }
 
@@ -273,9 +271,6 @@ pub struct AlbumUpdate {
     /// 专辑艺人，顺序即展示顺序，第一位为主艺人；至少一位。
     #[serde(default)]
     pub artist_ids: Option<Vec<i64>>,
-    /// 外部专辑标识；显式 null 或空串表示清空。
-    #[serde(default, deserialize_with = "double_option")]
-    pub external_id: Option<Option<String>>,
 }
 
 // ------------------------------- 歌曲 -------------------------------

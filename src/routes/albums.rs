@@ -19,8 +19,8 @@ use crate::payload::{
 };
 use crate::repo::{list_tracks, ALBUM_SELECT};
 use crate::services::{
-    album_media_urls, album_visible, dedup_ids, like_pattern, require_album_owner,
-    require_owner_or_admin, set_album_tags, sync_album_artists, visible_album,
+    album_media_urls, dedup_ids, like_pattern, require_album_owner, require_owner_or_admin,
+    set_album_tags, sync_album_artists, visible_album,
 };
 use crate::sqlutil::{bind_all, Param};
 use crate::state::AppState;
@@ -32,7 +32,6 @@ pub fn router() -> Router<AppState> {
         .route("/albums/search", get(search_albums))
         .route("/albums/mine", get(my_albums))
         .route("/albums/recommendations", get(recommendations))
-        .route("/albums/by-external/{external_id}", get(by_external))
         .route("/albums/{album_id}", get(get_album).patch(update_album).delete(delete_album))
 }
 
@@ -268,26 +267,6 @@ async fn get_album(
     Ok(ok(album_detail(&state, &album).await?))
 }
 
-async fn by_external(
-    State(state): State<AppState>,
-    ApiPath(external_id): ApiPath<String>,
-    OptionalUser(user): OptionalUser,
-) -> ApiResult<crate::error::ApiOk<AlbumDetail>> {
-    let key = external_id.trim().to_string();
-    if key.is_empty() {
-        return Err(AppError::not_found("专辑不存在"));
-    }
-    let album = sqlx::query_as::<_, AlbumRow>(&format!("{ALBUM_SELECT} WHERE al.external_id = ?"))
-        .bind(&key)
-        .fetch_optional(&state.db)
-        .await?;
-    let album = album.filter(|row| album_visible(row, user.as_ref()));
-    let Some(album) = album else {
-        return Err(AppError::not_found("专辑不存在"));
-    };
-    Ok(ok(album_detail(&state, &album).await?))
-}
-
 async fn create_album(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
@@ -316,24 +295,6 @@ async fn create_album(
             return Err(AppError::validation("body.score", "必须在 0-10 之间"));
         }
     }
-    let external_id = payload
-        .external_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.to_string());
-    if let Some(external) = &external_id {
-        if external.chars().count() > 64 {
-            return Err(AppError::validation("body.external_id", "长度不能超过 64 个字符"));
-        }
-        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM albums WHERE external_id = ?")
-            .bind(external)
-            .fetch_optional(&state.db)
-            .await?;
-        if exists.is_some() {
-            return Err(AppError::conflict(format!("外部专辑标识已存在：{external}")));
-        }
-    }
 
     let release_date = match payload.release_date.as_deref() {
         Some(raw) => parse_release_date("body.release_date", raw)?,
@@ -353,14 +314,13 @@ async fn create_album(
 
     let mut tx = state.db.begin().await?;
     let album_id: i64 = sqlx::query_scalar(
-        "INSERT INTO albums (artist_id, title, external_id, cover_url, description, album_type,
+        "INSERT INTO albums (artist_id, title, cover_url, description, album_type,
                              release_year, release_date, score, owner_id, view_count, is_public,
                              created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?) RETURNING id",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?) RETURNING id",
     )
     .bind(artist.id)
     .bind(&title)
-    .bind(&external_id)
     .bind(&cover)
     .bind(&description)
     .bind(payload.album_type.as_str())
@@ -426,30 +386,6 @@ async fn update_album(
         .as_ref()
         .map(|list| list[0])
         .unwrap_or(album.artist_id);
-
-    let mut external_id = album.external_id.clone();
-    if let Some(value) = payload.external_id {
-        let next = value
-            .as_deref()
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .map(str::to_string);
-        if let Some(text) = &next {
-            if text.chars().count() > 64 {
-                return Err(AppError::validation("body.external_id", "长度不能超过 64 个字符"));
-            }
-            let exists: Option<i64> =
-                sqlx::query_scalar("SELECT id FROM albums WHERE external_id = ? AND id <> ?")
-                    .bind(text)
-                    .bind(album.id)
-                    .fetch_optional(&state.db)
-                    .await?;
-            if exists.is_some() {
-                return Err(AppError::conflict(format!("外部专辑标识已存在：{text}")));
-            }
-        }
-        external_id = next;
-    }
 
     if let Some(value) = payload.title {
         let value = value.ok_or_else(|| AppError::bad_request("专辑标题不能为空"))?;
@@ -517,7 +453,7 @@ async fn update_album(
     sqlx::query(
         "UPDATE albums SET title = ?, description = ?, cover_url = ?, album_type = ?,
                            release_year = ?, release_date = ?, score = ?, is_public = ?,
-                           artist_id = ?, external_id = ?, updated_at = ?
+                           artist_id = ?, updated_at = ?
          WHERE id = ?",
     )
     .bind(&title)
@@ -529,7 +465,6 @@ async fn update_album(
     .bind(score)
     .bind(is_public)
     .bind(main_artist_id)
-    .bind(&external_id)
     .bind(&now)
     .bind(album.id)
     .execute(&mut *tx)

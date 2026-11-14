@@ -11,7 +11,7 @@ SELECT ar.id, ar.name, ar.cover_url, ar.bio, ar.owner_id, ar.created_at, ar.upda
 FROM artists ar";
 
 pub const ALBUM_SELECT: &str = "\
-SELECT al.id, al.artist_id, al.title, al.external_id, al.cover_url, al.description, al.album_type,
+SELECT al.id, al.artist_id, al.title, al.cover_url, al.description, al.album_type,
        al.release_year, al.release_date, al.score, al.owner_id, al.view_count, al.is_public,
        al.created_at, al.updated_at,
        (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id) AS track_count

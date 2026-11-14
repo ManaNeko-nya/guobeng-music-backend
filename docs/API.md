@@ -1,6 +1,6 @@
 # Guobeng Music Server API 文档
 
-> 版本：2.1.0 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
+> 版本：2.2.0 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
 >
 > 音乐库层级：**艺人 Artist → 专辑 Album → 歌曲 Track**；歌词以 LRC 文本保存在歌曲上。
 > 前端服务只通过本文档的 JSON API 访问后端；安卓端同样直接调用这些接口。
@@ -136,7 +136,6 @@
   "album_type": "album", "release_year": 2025, "release_date": "2025-04-18",
   "score": 8.8, "tags": ["流行", "独立"], "track_count": 6,
   "view_count": 1200, "is_public": true,
-  "external_id": "965291",
   "created_at": "...", "updated_at": "...",
   "artist": { "id": 1, "name": "星野结衣", "...": "..." },
   "artists": [{ "id": 1, "name": "星野结衣", "...": "..." },
@@ -174,15 +173,18 @@
 | 接口 | 方法 | 权限 | 说明 |
 |---|---|---|---|
 | `/albums/{id}` | GET | 公开/所有者 | `count_view=false` 不增加播放量（管理端使用） |
-| `/albums/by-external/{external_id}` | GET | 公开/所有者 | 按外部标识取专辑（含 `tracks`）；不存在返回 `404`，导入工具据此判断新建还是复用 |
-| `/albums` | POST | 登录 + 艺人所有者 | `{artist_id, title, cover_url?, description?, album_type?, release_date?, release_year?, score?, tags?, is_public?, external_id?, artist_ids?}` |
-| `/albums/{id}` | PATCH | 专辑所有者 | 字段均可选；显式传 `null` 可清空简介/封面/评分/发行日期/标签/外部标识；`artist_ids` 第一位为主艺人 |
+| `/albums` | POST | 登录 + 艺人所有者 | `{artist_id, title, cover_url?, description?, album_type?, release_date?, release_year?, score?, tags?, is_public?, artist_ids?}` |
+| `/albums/{id}` | PATCH | 专辑所有者 | 字段均可选；显式传 `null` 可清空简介/封面/评分/发行日期/标签；`artist_ids` 第一位为主艺人 |
 | `/albums/{id}` | DELETE | 专辑所有者 | 级联删除歌曲、评论、收藏、历史与本地媒体文件 |
 
 `release_date` 存在时 `release_year` 自动取日期年份；显式传 `release_date: null` 且未传 `release_year` 时年份也清空。
 
-`external_id` 是外部来源（酷狗等）的专辑唯一标识：同一 `external_id` 全局只允许一张专辑，
-重复创建返回 `409`；为空表示没有外部来源。专辑对象（列表/详情）都会带回该字段。
+`description` 是专辑简介，同时承担外部来源标识：酷狗导入的专辑默认写 `kugouid<酷狗专辑ID>`
+（例如 `kugouid965291`），不再单独存一列 `external_id`。`q` 模糊搜索已覆盖简介，导入工具
+用 `GET /albums?q=kugouid965291` 判断「新建还是复用」，命中后再比对返回项即可。
+其它平台沿用同样形式（如 `neteaseid123`），不需要改表结构。
+2.2.0 起 `external_id` 字段与 `/albums/by-external/{id}` 接口已移除；旧库升级时服务端会自动把
+原有 `external_id` 写进空简介后再删列。
 
 `artist_ids` 是专辑的完整艺人列表（可选）：`artist_id` 仍是主艺人，传了 `artist_ids` 时会
 一并建立 `album_artists` 关联（主艺人自动补在首位）。上传歌曲时，歌曲的艺人会自动并入专辑艺人，
@@ -192,8 +194,6 @@
 其余按顺序写入 `album_artists`；不在列表里的旧关联会被移除（包括此前由合作曲自动并入的艺人），
 需要保留时请一并传上。`artist_ids: []` 返回 `422`。只传 `artist_id` 的方式仍然可用，
 但不会触碰 `album_artists`。
-
-`external_id` 可随 `PATCH` 修改：显式 `null` 或空串表示清空，与其它专辑重复返回 `409`。
 
 ---
 
@@ -434,14 +434,14 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
 
 ```json
 { "code": 0, "message": "ok",
-  "data": { "status": "running", "version": "2.1.0", "debug": false,
+  "data": { "status": "running", "version": "2.2.0", "debug": false,
             "stats": { "artists": 6, "albums": 8, "tracks": 39, "users": 1 } } }
 ```
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `status` | string | 固定 `"running"`。请求能被处理就是这个值，不代表数据库之外的东西也正常 |
-| `version` | string | 服务端版本，随发布变化（当前 `2.1.0`） |
+| `version` | string | 服务端版本，随发布变化（当前 `2.2.0`） |
 | `debug` | bool | 是否以 `--debug` 启动 |
 | `stats` | object | `artists` / `albums` / `tracks` / `users` 四张表的行数 |
 
@@ -469,7 +469,7 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
 |---|---|
 | User | `id`(uuid) `username` `nickname` `avatar_url` `bio` `role`(user/admin/root) `is_active` |
 | Artist | `id` `name`(唯一) `cover_url` `bio` `owner_id` |
-| Album | `id` `artist_id` `title` `external_id`(外部唯一标识) `cover_url` `description` `album_type` `release_date` `release_year` `score` `owner_id` `view_count` `is_public`；标签在 `album_tags` |
+| Album | `id` `artist_id` `title` `cover_url` `description`(简介，酷狗导入默认 `kugouid<ID>`) `album_type` `release_date` `release_year` `score` `owner_id` `view_count` `is_public`；标签在 `album_tags` |
 | Track | `id` `album_id` `title` `order_index` `audio_url` `file_size` `file_md5` `duration_sec` `lyrics`(LRC) |
 | TrackArtist | `id` `track_id` `artist_id` `position`（`track_id + artist_id` 唯一）；歌曲的参与艺人 |
 | AlbumArtist | `id` `album_id` `artist_id` `position`（`album_id + artist_id` 唯一）；专辑的参与艺人 |

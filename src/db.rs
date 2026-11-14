@@ -41,7 +41,6 @@ CREATE TABLE IF NOT EXISTS albums (
     id           INTEGER PRIMARY KEY,
     artist_id    INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
     title        TEXT NOT NULL,
-    external_id  TEXT,
     cover_url    TEXT,
     description  TEXT,
     album_type   TEXT NOT NULL DEFAULT 'album',
@@ -58,8 +57,6 @@ CREATE INDEX IF NOT EXISTS ix_albums_artist ON albums(artist_id);
 CREATE INDEX IF NOT EXISTS ix_albums_title ON albums(title);
 CREATE INDEX IF NOT EXISTS ix_albums_created_at ON albums(created_at);
 CREATE INDEX IF NOT EXISTS ix_albums_updated_at ON albums(updated_at);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_albums_external_id
-    ON albums(external_id) WHERE external_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS album_artists (
     id        INTEGER PRIMARY KEY,
@@ -210,5 +207,41 @@ pub async fn init(settings: &Settings) -> Result<SqlitePool, String> {
         .await
         .map_err(|err| format!("建表失败：{err}"))?;
 
+    migrate_external_id_into_description(&pool).await?;
+
     Ok(pool)
+}
+
+/// 2.2.0 迁移：外部专辑标识不再单独占一列，改写进 description（`kugouid<ID>`）后删列。
+// TODO(下版本删除迁移程序)：所有实例升级完后，连同 `init` 里的调用一起删掉。
+async fn migrate_external_id_into_description(pool: &SqlitePool) -> Result<(), String> {
+    let has_column: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'external_id'",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|err| format!("检查 albums.external_id 失败：{err}"))?;
+    if has_column == 0 {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "UPDATE albums SET description = 'kugouid' || TRIM(external_id)
+         WHERE external_id IS NOT NULL AND TRIM(external_id) <> ''
+           AND (description IS NULL OR TRIM(description) = '')",
+    )
+    .execute(pool)
+    .await
+    .map_err(|err| format!("迁移外部专辑标识失败：{err}"))?;
+    sqlx::query("DROP INDEX IF EXISTS uq_albums_external_id")
+        .execute(pool)
+        .await
+        .map_err(|err| format!("删除 external_id 索引失败：{err}"))?;
+    sqlx::query("ALTER TABLE albums DROP COLUMN external_id")
+        .execute(pool)
+        .await
+        .map_err(|err| format!("删除 albums.external_id 失败：{err}"))?;
+
+    tracing::info!("迁移完成：albums.external_id 已并入 description 并删列");
+    Ok(())
 }
