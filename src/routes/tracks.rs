@@ -23,9 +23,9 @@ use crate::payload::{
 };
 use crate::repo::{list_tracks, renumber_tracks, TRACK_SELECT};
 use crate::services::{
-    create_track, like_pattern, reorder_tracks, require_album_owner, require_audio_upload_permission,
-    require_track_manager, visible_album, visible_album_clause, visible_track,
-    visible_track_clause, NewTrack,
+    create_track, dedup_ids, like_pattern, reorder_tracks, require_album_owner,
+    require_audio_upload_permission, require_track_manager, sync_track_artists, visible_album,
+    visible_album_clause, visible_track, visible_track_clause, NewTrack,
 };
 use crate::sqlutil::{bind_all, Param};
 use crate::state::AppState;
@@ -418,6 +418,36 @@ async fn get_track(
     Ok(ok(track_with_album(&state, track.id).await?))
 }
 
+/// 把某首歌放到专辑内指定位置，并把整张专辑的顺序压实为 0..n-1。
+/// 先把其余歌曲排好再插入目标歌，避免逐条更新时踩到中间顺序。
+async fn place_track(
+    exec: &mut sqlx::SqliteConnection,
+    album_id: i64,
+    track_id: i64,
+    position: Option<i64>,
+) -> ApiResult<()> {
+    let mut ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM tracks WHERE album_id = ? AND id <> ? ORDER BY order_index, id",
+    )
+    .bind(album_id)
+    .bind(track_id)
+    .fetch_all(&mut *exec)
+    .await?;
+    let index = match position {
+        Some(value) => (value.max(0) as usize).min(ids.len()),
+        None => ids.len(),
+    };
+    ids.insert(index, track_id);
+    for (order, id) in ids.iter().enumerate() {
+        sqlx::query("UPDATE tracks SET order_index = ? WHERE id = ?")
+            .bind(order as i64)
+            .bind(id)
+            .execute(&mut *exec)
+            .await?;
+    }
+    Ok(())
+}
+
 async fn update_track(
     State(state): State<AppState>,
     ApiPath(track_id): ApiPath<i64>,
@@ -427,21 +457,127 @@ async fn update_track(
     let (track, album) = visible_track(&state.db, track_id, Some(&user)).await?;
     require_track_manager(&user, &album)?;
 
-    if let Some(value) = payload.title {
-        let title = value.trim();
-        if title.is_empty() {
-            return Err(AppError::bad_request("歌曲标题不能为空"));
+    // 先把所有字段校验完，再开事务，避免中途失败留下半成品。
+    let title = match payload.title.as_deref() {
+        Some(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return Err(AppError::bad_request("歌曲标题不能为空"));
+            }
+            if trimmed.chars().count() > 255 {
+                return Err(AppError::validation("body.title", "长度不能超过 255 个字符"));
+            }
+            Some(trimmed.to_string())
         }
-        if title.chars().count() > 255 {
-            return Err(AppError::validation("body.title", "长度不能超过 255 个字符"));
+        None => None,
+    };
+
+    let artist_ids = match payload.artist_ids {
+        Some(list) => {
+            let ordered = dedup_ids(&list);
+            if ordered.is_empty() {
+                return Err(AppError::validation("body.artist_ids", "至少需要一位参与艺人"));
+            }
+            Some(ordered)
         }
+        None => None,
+    };
+
+    if let Some(order) = payload.order_index {
+        if order < 0 {
+            return Err(AppError::validation("body.order_index", "必须大于等于 0"));
+        }
+    }
+
+    let duration = match payload.duration_sec {
+        None => None,
+        Some(value) => {
+            if let Some(secs) = value {
+                if !secs.is_finite() || secs < 0.0 {
+                    return Err(AppError::validation("body.duration_sec", "必须大于等于 0"));
+                }
+            }
+            Some(value)
+        }
+    };
+
+    // 换专辑需要同时是目标专辑的所有者，否则拒绝，避免把歌塞进别人的专辑。
+    let target_album = match payload.album_id {
+        Some(id) if id != album.id => {
+            let target = visible_album(&state.db, id, Some(&user)).await?;
+            require_album_owner(&user, &target)?;
+            Some(target)
+        }
+        _ => None,
+    };
+    let album_changed = target_album.is_some();
+    let target_id = target_album.as_ref().map(|item| item.id).unwrap_or(album.id);
+    let main_artist_id = target_album
+        .as_ref()
+        .map(|item| item.artist_id)
+        .unwrap_or(album.artist_id);
+    let now = now_text();
+
+    let mut tx = state.db.begin().await?;
+    if let Some(value) = &title {
         sqlx::query("UPDATE tracks SET title = ?, updated_at = ? WHERE id = ?")
-            .bind(title)
-            .bind(now_text())
+            .bind(value)
+            .bind(&now)
             .bind(track.id)
-            .execute(&state.db)
+            .execute(&mut *tx)
             .await?;
     }
+    if let Some(value) = &duration {
+        sqlx::query("UPDATE tracks SET duration_sec = ?, updated_at = ? WHERE id = ?")
+            .bind(*value)
+            .bind(&now)
+            .bind(track.id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if album_changed {
+        sqlx::query("UPDATE tracks SET album_id = ?, updated_at = ? WHERE id = ?")
+            .bind(target_id)
+            .bind(&now)
+            .bind(track.id)
+            .execute(&mut *tx)
+            .await?;
+        // 原专辑移走一首后立即压实，避免留空洞。
+        renumber_tracks(&mut tx, album.id).await?;
+    }
+    if album_changed || payload.order_index.is_some() {
+        place_track(&mut tx, target_id, track.id, payload.order_index).await?;
+    }
+
+    // 显式改艺人 → 用新列表；只换专辑 → 把原艺人并入新专辑的艺人集合。
+    let sync_ids = match artist_ids {
+        Some(list) => Some(list),
+        None if album_changed => {
+            let existing: Vec<i64> = sqlx::query_scalar(
+                "SELECT artist_id FROM track_artists WHERE track_id = ? ORDER BY position, id",
+            )
+            .bind(track.id)
+            .fetch_all(&mut *tx)
+            .await?;
+            if existing.is_empty() {
+                None
+            } else {
+                Some(existing)
+            }
+        }
+        None => None,
+    };
+    if let Some(list) = sync_ids {
+        sync_track_artists(&mut tx, track.id, target_id, main_artist_id, &list).await?;
+    }
+    tx.commit().await?;
+
+    tracing::info!(
+        "修改歌曲 track={} album={} by={}",
+        track_id,
+        target_id,
+        user.uuid
+    );
     Ok(ok(track_with_album(&state, track.id).await?))
 }
 

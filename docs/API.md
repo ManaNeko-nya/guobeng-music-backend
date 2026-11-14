@@ -1,6 +1,6 @@
 # Guobeng Music Server API 文档
 
-> 版本：2.0.0 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
+> 版本：2.1.0 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
 >
 > 音乐库层级：**艺人 Artist → 专辑 Album → 歌曲 Track**；歌词以 LRC 文本保存在歌曲上。
 > 前端服务只通过本文档的 JSON API 访问后端；安卓端同样直接调用这些接口。
@@ -176,7 +176,7 @@
 | `/albums/{id}` | GET | 公开/所有者 | `count_view=false` 不增加播放量（管理端使用） |
 | `/albums/by-external/{external_id}` | GET | 公开/所有者 | 按外部标识取专辑（含 `tracks`）；不存在返回 `404`，导入工具据此判断新建还是复用 |
 | `/albums` | POST | 登录 + 艺人所有者 | `{artist_id, title, cover_url?, description?, album_type?, release_date?, release_year?, score?, tags?, is_public?, external_id?, artist_ids?}` |
-| `/albums/{id}` | PATCH | 专辑所有者 | 字段均可选；显式传 `null` 可清空简介/封面/评分/发行日期/标签；`artist_id` 不可修改 |
+| `/albums/{id}` | PATCH | 专辑所有者 | 字段均可选；显式传 `null` 可清空简介/封面/评分/发行日期/标签/外部标识；`artist_ids` 第一位为主艺人 |
 | `/albums/{id}` | DELETE | 专辑所有者 | 级联删除歌曲、评论、收藏、历史与本地媒体文件 |
 
 `release_date` 存在时 `release_year` 自动取日期年份；显式传 `release_date: null` 且未传 `release_year` 时年份也清空。
@@ -187,6 +187,13 @@
 `artist_ids` 是专辑的完整艺人列表（可选）：`artist_id` 仍是主艺人，传了 `artist_ids` 时会
 一并建立 `album_artists` 关联（主艺人自动补在首位）。上传歌曲时，歌曲的艺人会自动并入专辑艺人，
 所以合作曲的歌手也会出现在这张专辑的艺人列表里。
+
+`PATCH /albums/{id}` 对 `artist_ids` 采用**整体替换**语义：列表第一位写回 `artist_id`（主艺人），
+其余按顺序写入 `album_artists`；不在列表里的旧关联会被移除（包括此前由合作曲自动并入的艺人），
+需要保留时请一并传上。`artist_ids: []` 返回 `422`。只传 `artist_id` 的方式仍然可用，
+但不会触碰 `album_artists`。
+
+`external_id` 可随 `PATCH` 修改：显式 `null` 或空串表示清空，与其它专辑重复返回 `409`。
 
 ---
 
@@ -223,8 +230,20 @@
 | `/albums/{album_id}/tracks/reorder` | POST | 专辑所有者 | `{track_ids: [...]}`，必须包含该专辑全部歌曲 ID |
 | `/tracks` | GET | 公开/登录 | `q` `album_id` `artist_id` `md5` `sort=created_at|title|release`；登录后包含自己可见的私有专辑歌曲 |
 | `/tracks/{id}` | GET | 公开/所有者 | 含专辑与艺人 |
-| `/tracks/{id}` | PATCH | 歌曲管理 | 仅可改 `title` |
+| `/tracks/{id}` | PATCH | 歌曲管理 | `title`、`artist_ids`、`album_id`、`order_index`、`duration_sec`；改歌手/换专辑一次完成，不删歌不重传 |
 | `/tracks/{id}` | DELETE | 歌曲管理 | 级联删除评论/收藏/历史与本地音频文件，并压实顺序 |
+
+**无损修改歌曲**：`PATCH /tracks/{id}` 支持 `title`、`artist_ids`、`album_id`、`order_index`、
+`duration_sec`，全部可选，一次请求完成，**不需要删歌重传音频**，评论、收藏、播放历史、歌词
+和歌曲 ID 都保持不变。语义如下：
+
+- `artist_ids`：整体替换该曲的参与艺人（至少一位，重复自动去重，任一项不存在返回 `400`）。
+- `album_id`：换专辑。要求**同时是该曲所在专辑与目标专辑的所有者**（管理员不限），
+  否则 `403`；目标专辑不可见返回 `404`。换专辑后原专辑顺序自动压实，空专辑保留不删。
+- `order_index`：在目标专辑内的新位置（0 起）。不传时，换专辑追加到末尾，不换则保持原位。
+- `duration_sec`：手动修正时长，显式 `null` 清空。
+- 只换专辑而不传 `artist_ids` 时，该曲原有艺人会并入新专辑的艺人集合，避免合作艺人丢失。
+- 不传的字段一律不动；响应返回更新后的 `TrackWithAlbum`（含新专辑信息）。
 
 **参与艺人**：`artist_ids` 是必填的艺人 ID 列表（至少一位），顺序即展示顺序，重复 ID 自动去重；
 任一项不存在返回 `400`。上传接口通过重复表单字段传值（`artist_ids=1&artist_ids=2`），
@@ -401,14 +420,14 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
 
 ```json
 { "code": 0, "message": "ok",
-  "data": { "status": "running", "version": "2.0.0", "debug": false,
+  "data": { "status": "running", "version": "2.1.0", "debug": false,
             "stats": { "artists": 6, "albums": 8, "tracks": 39, "users": 1 } } }
 ```
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `status` | string | 固定 `"running"`。请求能被处理就是这个值，不代表数据库之外的东西也正常 |
-| `version` | string | 服务端版本，随发布变化（当前 `2.0.0`） |
+| `version` | string | 服务端版本，随发布变化（当前 `2.1.0`） |
 | `debug` | bool | 是否以 `--debug` 启动 |
 | `stats` | object | `artists` / `albums` / `tracks` / `users` 四张表的行数 |
 

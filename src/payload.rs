@@ -270,6 +270,12 @@ pub struct AlbumUpdate {
     pub tags: Option<Option<TagsInput>>,
     #[serde(default, deserialize_with = "double_option")]
     pub is_public: Option<Option<bool>>,
+    /// 专辑艺人，顺序即展示顺序，第一位为主艺人；至少一位。
+    #[serde(default)]
+    pub artist_ids: Option<Vec<i64>>,
+    /// 外部专辑标识；显式 null 或空串表示清空。
+    #[serde(default, deserialize_with = "double_option")]
+    pub external_id: Option<Option<String>>,
 }
 
 // ------------------------------- 歌曲 -------------------------------
@@ -291,6 +297,18 @@ pub struct TrackCreate {
 pub struct TrackUpdate {
     #[serde(default)]
     pub title: Option<String>,
+    /// 参与艺人，顺序即展示顺序；至少一位。传了才重建关联。
+    #[serde(default)]
+    pub artist_ids: Option<Vec<i64>>,
+    /// 移动到另一张专辑；不传表示不换。需要同时拥有目标专辑。
+    #[serde(default)]
+    pub album_id: Option<i64>,
+    /// 在目标专辑内的位置（0 起）。不传时换专辑追加到末尾、不换则保持原位。
+    #[serde(default)]
+    pub order_index: Option<i64>,
+    /// 歌曲时长（秒）；显式 null 表示清空。
+    #[serde(default, deserialize_with = "double_option")]
+    pub duration_sec: Option<Option<f64>>,
 }
 
 #[derive(Debug, Deserialize, Default)]

@@ -150,7 +150,8 @@ pub fn require_audio_upload_permission(state: &AppState, user: &crate::models::U
 
 // --------------------------- 艺人关联 ---------------------------
 
-fn dedup(ids: &[i64]) -> Vec<i64> {
+/// 保序去重：用于艺人 ID 列表（首位仍是主艺人）。
+pub fn dedup_ids(ids: &[i64]) -> Vec<i64> {
     let mut ordered = Vec::new();
     for id in ids {
         if !ordered.contains(id) {
@@ -231,7 +232,7 @@ pub async fn sync_album_artists(
     main_artist_id: i64,
     artist_ids: &[i64],
 ) -> ApiResult<()> {
-    let mut ordered = dedup(artist_ids);
+    let mut ordered = dedup_ids(artist_ids);
     if !ordered.contains(&main_artist_id) {
         ordered.insert(0, main_artist_id);
     }
@@ -248,7 +249,7 @@ pub async fn sync_track_artists(
     main_artist_id: i64,
     artist_ids: &[i64],
 ) -> ApiResult<()> {
-    let ordered = dedup(artist_ids);
+    let ordered = dedup_ids(artist_ids);
     assert_artists_exist(&mut *exec, &ordered).await?;
     sync_join_rows(&mut *exec, "track_artists", "track_id", track_id, &ordered).await?;
 

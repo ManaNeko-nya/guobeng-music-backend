@@ -19,7 +19,7 @@ use crate::payload::{
 };
 use crate::repo::{list_tracks, ALBUM_SELECT};
 use crate::services::{
-    album_media_urls, album_visible, like_pattern, require_album_owner,
+    album_media_urls, album_visible, dedup_ids, like_pattern, require_album_owner,
     require_owner_or_admin, set_album_tags, sync_album_artists, visible_album,
 };
 use crate::sqlutil::{bind_all, Param};
@@ -413,6 +413,44 @@ async fn update_album(
     let mut tags: Option<Vec<String>> = None;
     let mut cover_changed = false;
 
+    // 艺人列表：第一位是主艺人（写回 albums.artist_id），其余写入 album_artists。
+    let mut album_artists: Option<Vec<i64>> = None;
+    if let Some(list) = payload.artist_ids {
+        let ordered = dedup_ids(&list);
+        if ordered.is_empty() {
+            return Err(AppError::validation("body.artist_ids", "至少需要一位艺人"));
+        }
+        album_artists = Some(ordered);
+    }
+    let main_artist_id = album_artists
+        .as_ref()
+        .map(|list| list[0])
+        .unwrap_or(album.artist_id);
+
+    let mut external_id = album.external_id.clone();
+    if let Some(value) = payload.external_id {
+        let next = value
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .map(str::to_string);
+        if let Some(text) = &next {
+            if text.chars().count() > 64 {
+                return Err(AppError::validation("body.external_id", "长度不能超过 64 个字符"));
+            }
+            let exists: Option<i64> =
+                sqlx::query_scalar("SELECT id FROM albums WHERE external_id = ? AND id <> ?")
+                    .bind(text)
+                    .bind(album.id)
+                    .fetch_optional(&state.db)
+                    .await?;
+            if exists.is_some() {
+                return Err(AppError::conflict(format!("外部专辑标识已存在：{text}")));
+            }
+        }
+        external_id = next;
+    }
+
     if let Some(value) = payload.title {
         let value = value.ok_or_else(|| AppError::bad_request("专辑标题不能为空"))?;
         let trimmed = value.trim();
@@ -478,7 +516,8 @@ async fn update_album(
     let mut tx = state.db.begin().await?;
     sqlx::query(
         "UPDATE albums SET title = ?, description = ?, cover_url = ?, album_type = ?,
-                           release_year = ?, release_date = ?, score = ?, is_public = ?, updated_at = ?
+                           release_year = ?, release_date = ?, score = ?, is_public = ?,
+                           artist_id = ?, external_id = ?, updated_at = ?
          WHERE id = ?",
     )
     .bind(&title)
@@ -489,12 +528,17 @@ async fn update_album(
     .bind(&release_date)
     .bind(score)
     .bind(is_public)
+    .bind(main_artist_id)
+    .bind(&external_id)
     .bind(&now)
     .bind(album.id)
     .execute(&mut *tx)
     .await?;
     if let Some(tags) = &tags {
         set_album_tags(&mut tx, album.id, tags).await?;
+    }
+    if let Some(list) = &album_artists {
+        sync_album_artists(&mut tx, album.id, main_artist_id, list).await?;
     }
     tx.commit().await?;
 
