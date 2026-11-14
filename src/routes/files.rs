@@ -51,7 +51,8 @@ async fn upload_file(
         return Err(AppError::bad_request("缺少上传文件"));
     };
 
-    register_upload(&state.db, &upload, &user).await?;
+    let mut conn = state.db.acquire().await?;
+    register_upload(&mut *conn, &upload, &user).await?;
     tracing::info!("上传文件 user={} kind={} size={}", user.uuid, upload.kind, upload.size);
     Ok(ok(UploadOut {
         url: upload.url,

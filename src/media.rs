@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use axum::extract::multipart::Field;
 use md5::{Digest, Md5};
-use sqlx::sqlite::SqlitePool;
+use sqlx::sqlite::{SqliteConnection, SqlitePool};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
@@ -213,9 +213,9 @@ pub fn resolve_media_path(settings: &Settings, relative_url: &str) -> Option<Pat
     join_relative(&settings.media_dir, relative_url.strip_prefix("/media/")?)
 }
 
-/// 登记上传文件的归属（调用方负责提交事务）。
+/// 登记上传文件的归属；传连接时由调用方负责提交事务。
 pub async fn register_upload(
-    pool: &SqlitePool,
+    exec: &mut SqliteConnection,
     upload: &SavedUpload,
     user: &UserRow,
 ) -> Result<(), sqlx::Error> {
@@ -227,7 +227,7 @@ pub async fn register_upload(
     .bind(upload.size as i64)
     .bind(user.id)
     .bind(now_text())
-    .execute(pool)
+    .execute(&mut *exec)
     .await?;
     Ok(())
 }

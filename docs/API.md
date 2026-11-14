@@ -216,8 +216,9 @@
 此时展示层回退到 `album.artist`。写入时用 `artist_ids` 指定，服务端按顺序建立关联。
 
 `/tracks` 列表与 `/tracks/{id}` 返回 `TrackWithAlbum`：在歌曲对象上增加 `album`（含 `artist`）。
-`audio_url` 可以是 `/media/...` 或外部 `http(s)` 地址；创建后不可修改。
-`duration_sec` 可为空；上传时可由客户端提供，播放历史上报时会用播放器实际时长补齐。
+`audio_url` 可以是 `/media/...` 或外部 `http(s)` 地址；创建后可通过
+`POST /tracks/{id}/audio` 更换音源，`PATCH` 不接受该字段。
+`duration_sec` 可为空；上传/换源时可由客户端提供，播放历史上报时会用播放器实际时长补齐。
 `file_md5` 是服务器在保存音频时计算的文件指纹；用于跨歌单/重复导入去重。
 
 ### 5.2 接口
@@ -231,6 +232,7 @@
 | `/tracks` | GET | 公开/登录 | `q` `album_id` `artist_id` `md5` `sort=created_at|title|release`；登录后包含自己可见的私有专辑歌曲 |
 | `/tracks/{id}` | GET | 公开/所有者 | 含专辑与艺人 |
 | `/tracks/{id}` | PATCH | 歌曲管理 | `title`、`artist_ids`、`album_id`、`order_index`、`duration_sec`；改歌手/换专辑一次完成，不删歌不重传 |
+| `/tracks/{id}/audio` | POST | 歌曲管理 + 上传开关 | multipart：`file`、`duration_sec?`；只换音频文件，歌曲 ID 与歌词等不变 |
 | `/tracks/{id}` | DELETE | 歌曲管理 | 级联删除评论/收藏/历史与本地音频文件，并压实顺序 |
 
 **无损修改歌曲**：`PATCH /tracks/{id}` 支持 `title`、`artist_ids`、`album_id`、`order_index`、
@@ -244,6 +246,17 @@
 - `duration_sec`：手动修正时长，显式 `null` 清空。
 - 只换专辑而不传 `artist_ids` 时，该曲原有艺人会并入新专辑的艺人集合，避免合作艺人丢失。
 - 不传的字段一律不动；响应返回更新后的 `TrackWithAlbum`（含新专辑信息）。
+
+**更换音源**：`POST /tracks/{id}/audio` 用 `multipart/form-data` 上传新音频（`file` 必填，
+`duration_sec` 可选），只替换 `audio_url`、`file_size`、`file_md5`、`duration_sec`，
+歌曲 ID、标题、艺人、顺序、歌词、评论、收藏与播放历史全部保持不变，响应同样是 `TrackWithAlbum`。
+
+- 权限与新建上传一致：歌曲管理权限 + `allow_user_audio_upload` 开关（管理员不受开关限制）。
+- 格式、大小、文件头校验和 MD5 查重沿用上传接口；新音频与其它可见歌曲重复返回 `409`，
+  与本曲当前文件相同则允许重传。
+- 不传 `duration_sec` 时清空时长（由播放历史上报补写）；传入时按新音频时长写入。
+- 事务提交成功后，旧 `/media/...` 音频在**没有其它歌曲引用**、且归属校验通过时被删除；
+  外部 `http(s)` 链接与仍被共享的文件不动。任一步失败都会删掉本次刚落盘的新文件，不会留下半换状态。
 
 **参与艺人**：`artist_ids` 是必填的艺人 ID 列表（至少一位），顺序即展示顺序，重复 ID 自动去重；
 任一项不存在返回 `400`。上传接口通过重复表单字段传值（`artist_ids=1&artist_ids=2`），
@@ -261,9 +274,10 @@ JSON 接口直接传数组。歌曲与艺人是独立关联表（`track_artists`
 如果同一 MD5 已存在，上传返回 `409`（消息包含已有歌曲 ID）；导入工具应先用
 `GET /tracks?md5=<md5>` 查询并复用已有歌曲。`/tracks` 的 `md5` 参数为精确匹配。
 历史歌曲若没有 `file_md5`，可运行一次 `python run.py --backfill-md5 --init-only` 补算。
+更换音源时同样按 MD5 查重，但排除该曲自身，因此重传同一个文件不会报 `409`。
 
 **上传开关**：运行时配置 `allow_user_audio_upload=false` 时，普通用户不能调用
-`/tracks/upload` 或 `/files/upload?kind=audio`；`root` / `admin` 不受限。
+`/albums/{id}/tracks/upload`、`/tracks/{id}/audio` 或 `/files/upload?kind=audio`；`root` / `admin` 不受限。
 外部音频地址不受该开关限制，但只允许专辑所有者添加。
 
 ---

@@ -1,4 +1,4 @@
-//! 歌曲接口：专辑下的增删改序、全局搜索、详情、LRC 歌词。
+//! 歌曲接口：专辑下的增删改序、全局搜索、详情、换源、LRC 歌词。
 
 use std::path::Path;
 
@@ -16,8 +16,8 @@ use crate::extract::{
 };
 use crate::hydrate;
 use crate::lyrics::normalize_lrc;
-use crate::media::{delete_media_file, save_field, SavedUpload};
-use crate::models::TrackRow;
+use crate::media::{delete_media_file, register_upload, save_field, SavedUpload};
+use crate::models::{TrackRow, UserRow};
 use crate::payload::{
     validate_media_url, LyricsUpdate, TrackCreate, TrackReorderRequest, TrackUpdate,
 };
@@ -43,9 +43,14 @@ pub fn album_tracks_router() -> Router<AppState> {
 }
 
 pub fn tracks_router() -> Router<AppState> {
+    let audio_limit = crate::settings::MAX_AUDIO_SIZE as usize + 64 * 1024 * 1024;
     Router::new()
         .route("/tracks", get(list_tracks_all))
         .route("/tracks/{track_id}", get(get_track).patch(update_track).delete(delete_track))
+        .route(
+            "/tracks/{track_id}/audio",
+            post(replace_track_audio).layer(DefaultBodyLimit::max(audio_limit)),
+        )
         .route(
             "/tracks/{track_id}/lyrics",
             get(get_lyrics).put(put_lyrics).delete(delete_lyrics),
@@ -139,6 +144,21 @@ fn parse_form_int(value: &str) -> ApiResult<i64> {
         .map_err(|_| AppError::validation("body.artist_ids", "必须是整数"))
 }
 
+/// 表单里的时长字段：空串视为不传；非法值给出 422 字段错误。
+fn parse_form_duration(value: &str) -> ApiResult<Option<f64>> {
+    let text = value.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let secs = text
+        .parse::<f64>()
+        .map_err(|_| AppError::validation("body.duration_sec", "必须是数字"))?;
+    if !secs.is_finite() || secs < 0.0 {
+        return Err(AppError::validation("body.duration_sec", "必须大于等于 0"));
+    }
+    Ok(Some(secs))
+}
+
 fn parse_form_artist_ids(value: &str) -> ApiResult<Vec<i64>> {
     let mut ids = Vec::new();
     for part in value.split(|c: char| c == ',' || c.is_whitespace()) {
@@ -193,10 +213,8 @@ async fn upload_track(
                     .text()
                     .await
                     .map_err(|err| AppError::bad_request(format!("duration_sec 读取失败：{err}")))?;
-                if !value.trim().is_empty() {
-                    duration = Some(value.trim().parse::<f64>().map_err(|_| {
-                        AppError::validation("body.duration_sec", "必须是数字")
-                    })?);
+                if let Some(secs) = parse_form_duration(&value)? {
+                    duration = Some(secs);
                 }
             }
             "order_index" => {
@@ -280,17 +298,7 @@ async fn upload_track(
         }
     };
 
-    let register = sqlx::query(
-        "INSERT INTO media_files (url, kind, size, uploader_id, created_at) VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(&upload.url)
-    .bind("audio")
-    .bind(upload.size as i64)
-    .bind(user.id)
-    .bind(now_text())
-    .execute(&mut *tx)
-    .await;
-    if let Err(err) = register {
+    if let Err(err) = register_upload(&mut *tx, &upload, &user).await {
         drop(tx);
         delete_media_file(&state.settings, &state.db, Some(&upload.url), &user, true).await;
         return Err(AppError::from(err));
@@ -304,6 +312,148 @@ async fn upload_track(
         upload.size
     );
     Ok(ok(track_out(&state, track_id).await?))
+}
+
+/// 读取换源表单；中途失败时删掉本次刚落盘的文件。
+async fn parse_audio_form(
+    state: &AppState,
+    user: &UserRow,
+    mut multipart: axum::extract::Multipart,
+) -> ApiResult<(SavedUpload, Option<String>)> {
+    let mut saved: Option<SavedUpload> = None;
+    let mut duration_raw: Option<String> = None;
+
+    loop {
+        let mut field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(err) => {
+                if let Some(upload) = saved.as_ref() {
+                    delete_media_file(&state.settings, &state.db, Some(&upload.url), user, true).await;
+                }
+                return Err(AppError::bad_request(format!("上传表单解析失败：{err}")));
+            }
+        };
+        let name = field.name().unwrap_or_default().to_string();
+        match name.as_str() {
+            "file" if saved.is_none() => {
+                saved = Some(save_field(&mut field, "audio", &state.settings).await?);
+            }
+            "duration_sec" => {
+                match field.text().await {
+                    Ok(value) => duration_raw = Some(value),
+                    Err(err) => {
+                        if let Some(upload) = saved.as_ref() {
+                            delete_media_file(
+                                &state.settings,
+                                &state.db,
+                                Some(&upload.url),
+                                user,
+                                true,
+                            )
+                            .await;
+                        }
+                        return Err(AppError::bad_request(format!("duration_sec 读取失败：{err}")));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let upload = saved.ok_or_else(|| AppError::bad_request("缺少上传文件"))?;
+    Ok((upload, duration_raw))
+}
+
+/// 事务内换掉音频字段并登记新文件；提交成功后清理不再被引用的旧文件。
+async fn apply_audio_replacement(
+    state: &AppState,
+    user: &UserRow,
+    track: &TrackRow,
+    upload: &SavedUpload,
+    duration: Option<f64>,
+) -> ApiResult<()> {
+    // 只在可见范围内查重，本曲自身不算冲突（允许重传同一文件）。
+    let clause = visible_track_clause("t", Some(user));
+    let existing = sqlx::query_as::<_, (i64, String)>(&format!(
+        "SELECT t.id, t.title FROM tracks t WHERE t.file_md5 = ? AND t.id <> ? AND {} LIMIT 1",
+        clause.sql
+    ))
+    .bind(&upload.md5)
+    .bind(track.id)
+    .bind(clause.binds[0])
+    .bind(clause.binds[1])
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some((id, title)) = existing {
+        return Err(AppError::conflict(format!(
+            "相同音频已存在：{title}（歌曲 ID {id}）"
+        )));
+    }
+
+    let old_url = track.audio_url.clone();
+    let mut tx = state.db.begin().await?;
+    let write = sqlx::query(
+        "UPDATE tracks SET audio_url = ?, file_size = ?, file_md5 = ?, duration_sec = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(&upload.url)
+    .bind(upload.size as i64)
+    .bind(&upload.md5)
+    .bind(duration)
+    .bind(now_text())
+    .bind(track.id)
+    .execute(&mut *tx)
+    .await;
+    if let Err(err) = write {
+        drop(tx);
+        return Err(AppError::from(err));
+    }
+    if let Err(err) = register_upload(&mut *tx, upload, user).await {
+        drop(tx);
+        return Err(AppError::from(err));
+    }
+    tx.commit().await?;
+
+    // 外链与仍被其它歌曲引用的文件不动；媒体归属校验由 delete_media_file 负责。
+    if let Some(url) = old_url.as_ref() {
+        let used = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM tracks WHERE audio_url = ?")
+            .bind(url)
+            .fetch_one(&state.db)
+            .await?;
+        if used == 0 {
+            delete_media_file(&state.settings, &state.db, Some(url), user, false).await;
+        }
+    }
+    Ok(())
+}
+
+/// 更换音源：歌曲 ID、歌词、评论、收藏与历史保持不变。
+async fn replace_track_audio(
+    State(state): State<AppState>,
+    ApiPath(track_id): ApiPath<i64>,
+    CurrentUser(user): CurrentUser,
+    ApiMultipart(multipart): ApiMultipart,
+) -> ApiResult<crate::error::ApiOk<TrackWithAlbum>> {
+    let (track, album) = visible_track(&state.db, track_id, Some(&user)).await?;
+    require_track_manager(&user, &album)?;
+    require_audio_upload_permission(&state, &user)?;
+
+    let (upload, duration_raw) = parse_audio_form(&state, &user, multipart).await?;
+    let outcome = match parse_form_duration(duration_raw.as_deref().unwrap_or_default()) {
+        Ok(duration) => apply_audio_replacement(&state, &user, &track, &upload, duration).await,
+        Err(err) => Err(err),
+    };
+    if let Err(err) = outcome {
+        delete_media_file(&state.settings, &state.db, Some(&upload.url), &user, true).await;
+        return Err(err);
+    }
+
+    tracing::info!(
+        "更换音源成功 track={} size={} by={}",
+        track_id,
+        upload.size,
+        user.uuid
+    );
+    Ok(ok(track_with_album(&state, track.id).await?))
 }
 
 async fn reorder_album_tracks(
