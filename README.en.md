@@ -39,7 +39,7 @@ It never needs to know what the database looks like or where files are stored.
 - **Audio upload**: the server computes an MD5 for each file; re-uploading the same bytes returns 409 with the existing track ID. Up to 1GB per file, supporting mp3 / flac / wav / m4a / aac / ogg / opus
 - **Track ordering**: drag to reorder; the server compacts `order_index` so no gaps are left behind
 - **External audio**: or store just an `http(s)` URL and keep the bytes off your server
-- **External album IDs**: `external_id` is globally unique, which makes de-duplication trivial when importing from another catalog
+- **Album descriptions as source markers**: descriptions are editable; imports from Kugou and other catalogs write `kugouid<ID>` there. Keyword search covers descriptions, so import tools can de-duplicate without a dedicated column
 
 **Playback**
 
