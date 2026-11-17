@@ -207,53 +207,5 @@ pub async fn init(settings: &Settings) -> Result<SqlitePool, String> {
         .await
         .map_err(|err| format!("建表失败：{err}"))?;
 
-    migrate_external_id_into_description(&pool).await?;
-
     Ok(pool)
-}
-
-/// 2.2.0 迁移：外部专辑标识不再单独占一列，改写进 description（`kugouid<ID>`）后删列。
-// TODO(下版本删除迁移程序)：所有实例升级完后，连同 `init` 里的调用一起删掉。
-async fn migrate_external_id_into_description(pool: &SqlitePool) -> Result<(), String> {
-    let has_column: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM pragma_table_info('albums') WHERE name = 'external_id'",
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|err| format!("检查 albums.external_id 失败：{err}"))?;
-    if has_column == 0 {
-        return Ok(());
-    }
-
-    sqlx::query(
-        "UPDATE albums SET description = 'kugouid' || TRIM(external_id)
-         WHERE external_id IS NOT NULL AND TRIM(external_id) <> ''
-           AND (description IS NULL OR TRIM(description) = '')",
-    )
-    .execute(pool)
-    .await
-    .map_err(|err| format!("迁移外部专辑标识失败：{err}"))?;
-    // Python 版遗留过多个引用该列的索引，DROP COLUMN 前必须全部清理。
-    let indexes: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM sqlite_master
-         WHERE type = 'index' AND tbl_name = 'albums'
-           AND sql IS NOT NULL AND sql LIKE '%external_id%'",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|err| format!("查询 external_id 索引失败：{err}"))?;
-    for name in indexes {
-        let quoted = name.replace('"', "\"\"");
-        sqlx::query(&format!("DROP INDEX IF EXISTS \"{quoted}\""))
-            .execute(pool)
-            .await
-            .map_err(|err| format!("删除索引 {name} 失败：{err}"))?;
-    }
-    sqlx::query("ALTER TABLE albums DROP COLUMN external_id")
-        .execute(pool)
-        .await
-        .map_err(|err| format!("删除 albums.external_id 失败：{err}"))?;
-
-    tracing::info!("迁移完成：albums.external_id 已并入 description 并删列");
-    Ok(())
 }

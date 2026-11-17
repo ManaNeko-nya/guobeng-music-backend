@@ -33,7 +33,7 @@ fn is_loopback(ip: IpAddr) -> bool {
 }
 
 /// 只有直连对端是本机时才采信 X-Forwarded-For，并取最右一跳。
-fn resolve_ip(parts: &Parts) -> (String, bool) {
+fn resolve_ip(parts: &Parts) -> String {
     let peer = peer_ip(parts);
     if let Some(peer) = peer {
         if is_loopback(peer) {
@@ -43,31 +43,20 @@ fn resolve_ip(parts: &Parts) -> (String, bool) {
                     .map(|item| item.trim())
                     .rfind(|item| !item.is_empty())
                 {
-                    let local = last.eq_ignore_ascii_case("localhost")
-                        || last.parse::<IpAddr>().map(is_loopback).unwrap_or(false);
-                    return (last.to_string(), local);
+                    return last.to_string();
                 }
             }
         }
     }
     match peer {
-        Some(ip) => (ip.to_string(), is_loopback(ip)),
-        None => ("unknown".to_string(), false),
+        Some(ip) => ip.to_string(),
+        None => "unknown".to_string(),
     }
-}
-
-pub fn client_ip(parts: &Parts) -> String {
-    resolve_ip(parts).0
-}
-
-pub fn local_request(parts: &Parts) -> bool {
-    resolve_ip(parts).1
 }
 
 /// 请求来源信息，供登录/刷新等需要 IP 与 UA 的接口使用。
 pub struct ClientInfo {
     pub ip: String,
-    pub local: bool,
     pub user_agent: Option<String>,
 }
 
@@ -75,8 +64,7 @@ impl FromRequestParts<AppState> for ClientInfo {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &AppState) -> Result<Self, AppError> {
-        let (ip, local) = resolve_ip(parts);
-        Ok(ClientInfo { ip, local, user_agent: user_agent(parts) })
+        Ok(ClientInfo { ip: resolve_ip(parts), user_agent: user_agent(parts) })
     }
 }
 
@@ -110,13 +98,6 @@ pub async fn load_user(parts: &Parts, state: &AppState) -> Option<UserRow> {
         .await
         .ok()??;
     if !user.active() {
-        return None;
-    }
-    if user.is_root() && !local_request(parts) {
-        tracing::warn!(
-            "拒绝 root 账户的远程访问 ip={}",
-            client_ip(parts)
-        );
         return None;
     }
     Some(user)

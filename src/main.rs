@@ -190,7 +190,7 @@ async fn ensure_root_account(
     let now = timeutil::now_text();
     sqlx::query(
         "INSERT INTO users (uuid, username, password_hash, nickname, bio, role, created_at, updated_at)
-         VALUES (?, 'root', ?, 'root', '超级管理员（仅限本机登录）', 'root', ?, ?)",
+         VALUES (?, 'root', ?, 'root', '超级管理员', 'root', ?, ?)",
     )
     .bind(uuid::Uuid::new_v4().simple().to_string())
     .bind(&password_hash)
@@ -207,9 +207,10 @@ async fn ensure_root_account(
          密码: {password}\n\
          创建时间: {}\n\n\
          说明：\n\
-         1. root 账户仅允许从本机（127.0.0.1 / ::1）登录；\n\
-         2. 登录后请尽快修改密码，并删除本文件；\n\
-         3. 若忘记密码，可删除数据库后重新初始化。\n",
+         1. root 与普通账户一样可从任意地址登录；\n\
+         2. 强烈建议另建一个 admin 账户日常使用，不要长期使用 root；\n\
+         3. 登录后请尽快修改密码，并删除本文件；\n\
+         4. 若忘记密码，可删除数据库后重新初始化。\n",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
     );
     std::fs::write(&file, content).map_err(|err| format!("写入密码文件失败：{err}"))?;
@@ -230,7 +231,8 @@ fn root_notice(account: &RootAccount) -> String {
     let line = "=".repeat(64);
     format!(
         "\n{line}\n 首次启动：{APP_NAME} 已创建 root 超级管理员\n\
-           用户名: {}\n   密码  : {}\n   密码文件: {}\n   root 仅允许从本机登录，登录后请尽快修改密码并删除该文件\n{line}\n",
+           用户名: {}\n   密码  : {}\n   密码文件: {}\n\
+           建议另建 admin 账户日常使用，不要长期使用 root；登录后请尽快修改密码并删除该文件\n{line}\n",
         account.username, account.password, account.file
     )
 }

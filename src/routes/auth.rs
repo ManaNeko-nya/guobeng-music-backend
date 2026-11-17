@@ -169,10 +169,6 @@ async fn login(
     if !user.active() {
         return Err(AppError::unauthorized("账户已被禁用"));
     }
-    if user.is_root() && !client.local {
-        tracing::warn!("拒绝 root 远程登录 ip={}", client.ip);
-        return Err(AppError::unauthorized("root 账户仅允许从本机登录"));
-    }
 
     state.limiter.register_success(&key);
 
@@ -226,11 +222,6 @@ async fn refresh(
         .await?
         .filter(|user| user.active())
         .ok_or_else(|| AppError::unauthorized("账户不可用"))?;
-
-    if user.is_root() && !client.local {
-        tracing::warn!("拒绝 root 账户的远程令牌刷新 ip={}", client.ip);
-        return Err(AppError::unauthorized("root 账户仅允许从本机登录"));
-    }
 
     let tokens = issue_token_pair(&state, &user, client.user_agent, &client.ip).await?;
     sqlx::query("UPDATE refresh_tokens SET revoked_at = ?, replaced_by = ? WHERE id = ?")

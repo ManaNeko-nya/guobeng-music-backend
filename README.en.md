@@ -26,7 +26,7 @@ as one clean REST contract. Your frontend — web, Android, desktop or CLI — o
 It never needs to know what the database looks like or where files are stored.
 
 - **Stack**: Rust · axum · SQLite (single-file database)
-- **Contract**: `/api/v1`, every response shaped as `{ code, message, data }`
+- **Contract**: `/api/v1`, JSON responses shaped as `{ code, message, data }`
 - **Deployment**: one binary plus one `config.json`. No Python, Node, JVM or external database.
 
 ## Features
@@ -63,39 +63,88 @@ It never needs to know what the database looks like or where files are stored.
 - Register / login / refresh / logout / change password
 - Access tokens are 30-minute JWTs; refresh tokens live 7 days, **rotate on every refresh**, and only their SHA-256 digest is stored
 - Changing a password invalidates every refresh token for that user immediately
-- The `root` account may only sign in from localhost (`127.0.0.1` / `::1`); its token is treated as anonymous from anywhere else
+- The `root` account signs in from any address like any other account; **create a separate admin account for daily use** instead of staying on root
 - Login throttling: 8 failures per IP + account within 5 minutes locks it for 5 minutes
 - Roles: `user` / `admin` / `root`. Unauthorized access returns 403
+- Passwords use PBKDF2-HMAC-SHA256 with 600,000 iterations and a 16-byte random salt; the hash records its scheme and iteration count, so old passwords keep working and are rehashed on the next successful login
 
 **Operations**
 
 - Missing keys in `config.json` are written back with their defaults, so the file always shows every option
 - `allow_registration` and `allow_user_audio_upload` are **hot-reloaded** — no restart needed
-- `/health` for liveness (root path, not under `/api/v1`), `/docs` for a one-page API reference
+- `/health` for liveness (root path, not under `/api/v1`): the public response only carries `status`; version and stats require an admin token or debug mode; `/docs` is the contract entry point, with the full contract in `docs/API.md`
 
-## How it differs
+## Strengths and positioning
 
-Compared against **Navidrome**, the most common self-hosted music server and the exact opposite end of the spectrum.
+**Its edge is not "more features than Navidrome" — in fact it has fewer. It is that a complete self-hosted
+music service fits into one static binary and one precisely written contract.**
+
+### One file, zero dependencies, runs on a phone
 
 | | Guobeng Music Server | Navidrome |
 |---|---|---|
-| Shape | Backend API only; you write the frontend | Complete product with a built-in React web UI |
-| Protocol | Its own RESTful JSON contract | Subsonic / OpenSubsonic API |
-| Client ecosystem | Only the clients you build | Dozens of ready-made mobile and desktop apps |
-| Import | Upload via HTTP, metadata via API | Scans a local music folder and reads embedded tags |
-| Transcoding | None; original files served as-is | On-the-fly ffmpeg transcoding |
-| Integrations | None | Last.fm / ListenBrainz scrobbling, public share links, multiple libraries |
-| Multi-artist | First-class, backed by a dedicated join table | Follows the Subsonic model, album artist first |
-| Data model | Artists / albums / tracks + comments + favorite lists + play history | Subsonic-shaped, per-user starred / rating / playcount |
+| Deliverable | **A single executable** | Binary + frontend assets + ffmpeg |
+| External dependencies | **None** (no Python / Node / JVM / external database / container) | ffmpeg subprocess (transcoding) |
+| Deployment | Drop it in a folder and run; works directly on Android + Termux | Usually Docker; on Android needs proot / root |
+| Linking | Linux builds are fully static musl; nothing to install on the target | Relies on the target's glibc ecosystem |
+| Cold start | Creates the DB and opens SQLite; no scan phase | Scans the library on start and incrementally; slower as it grows |
+| Transcoding | None; originals served as-is | Real-time ffmpeg transcoding |
 
-**Which one to pick**
+On a phone this is not an optimisation but a feasibility question: a phone already running another service
+pays for the container runtime all the time, and ffmpeg is the main source of CPU spikes and heat once triggered.
+In this library 99% of tracks are mp3 at roughly 128 kbps, so serving the original is the best choice anyway —
+what it saves is not performance but operational surface.
 
-- Want something that works out of the box with an existing mobile app → Navidrome.
-- Want a clean backend contract with full control over the frontend, or want to embed a music library into your own product → this.
+### Hard edges in the contract and permissions
 
-**Deliberately out of scope**: transcoding, scrobbling, a built-in player, folder scanning, Subsonic compatibility.
-These are boundaries, not gaps — every feature added to the server is freedom taken away from the frontend.
-The only promise here is: **keep the data and permissions correct, and document the API precisely.**
+- **422 pinpoints the field**: `data.errors: [{ field, message }]` maps straight onto form inputs
+- **404 does not leak existence**: a private album does not exist for anyone else, and tracks, lyrics, comments, favorites and history inherit that rule
+- **416 follows the RFC**: an out-of-range request returns `Content-Range: bytes */total`, so clients do not have to guess
+- **401 vs 403**: 401 means signed out, 403 means not allowed — one 403 never wipes the login state
+- **Fixed pagination contract**: `page_size` 1–100; out-of-range is a 422 instead of a silent truncation
+
+### Measured on a phone
+
+Deployed on Android + Termux with 752 albums / 2,615 tracks:
+
+```
+8 concurrent workers × 4 rounds = 32 requests: 32/32 succeeded, p50 44 ms / p90 56 ms / max 64 ms, 178.7 req/s
+Page 250: 29 ms (no degradation) · 100 tracks with joins: 119 ms · search: 44 ms
+Audio Range returns 206 + Content-Range · full download MD5 matches the stored file_md5 byte for byte
+```
+
+The conclusion is simple: for a library in the tens of thousands, a single user and phone-class hardware,
+SQLite plus a single axum process is enough — no cache layer or external dependency required.
+**The target scale is a library in the tens of thousands**; beyond that, fuzzy search and deep pagination
+would need a different implementation.
+
+### Against Navidrome: not better, just thinner
+
+| | Guobeng Music Server | Navidrome |
+|---|---|---|
+| Shape | **Backend contract only**; the frontend is entirely yours | Complete product with a built-in web UI |
+| Protocol | Its own REST `/api/v1` | Subsonic / OpenSubsonic |
+| Client ecosystem | Clients you write (JianYin already speaks both backends) | Dozens of ready-made apps |
+| Source of truth | **The library is the truth, files are attachments** | Files are the truth, the library is an index |
+| Import | Written over the HTTP API, metadata via API | Scans folders and reads embedded tags |
+
+They are not competitors but two different choices. Navidrome aims for "install and listen";
+this project aims for "every byte and every rule stays in your hands". The price is the existing ecosystem,
+the payoff is zero dependencies, zero operations and zero compromise — and that price is already paid on the
+client side: JianYin implements both this contract and Subsonic, turning "no ecosystem" into "no ecosystem needed".
+
+### Deliberately out of scope, and what it costs
+
+| Trade-off | Cost |
+|---|---|
+| No transcoding | Mobile data and first-play latency are the client's problem; 99% of this library is mp3 at 128 kbps, so serving originals is cheaper |
+| No Subsonic compatibility | Loses the ready-made app ecosystem; covered by the self-written client |
+| No scrobbling / share links / multiple libraries | Product-level features, consistent with "backend owns data and permissions only" |
+| No built-in player | Fully decoupled from clients; playback UX is defined by them |
+| No folder scanning | Ingestion goes through the HTTP API and metadata is the caller's job — in exchange, the library is the source of truth |
+
+These are boundaries, not gaps: every feature added to the server is freedom taken away from the frontend.
+The project itself does two things: **keep the data and permissions correct, and document the API precisely.**
 
 ## Design notes
 
@@ -103,8 +152,8 @@ The only promise here is: **keep the data and permissions correct, and document 
 Only the shapes defined in `dto.rs` are exposed. What a database row looks like (`models.rs`) never leaks out.
 Changing a table should not force a frontend change — that is the point of the split.
 
-**One error shape, everywhere.**
-Every response, including failures, is `{ code, message, data }`, where `code` is the HTTP status and 0 means success.
+**Errors share the same structure.**
+Business endpoints use `{ code, message, data }`, where `code` is the HTTP status and 0 means success.
 Structural validation failures (a missing field, `page_size=101`) return 422 with
 `data.errors: [{field, message}]`, so the frontend can map each error straight onto a form field.
 
@@ -173,7 +222,8 @@ On Windows you can also double-click `build_user.bat`; it asks for a target plat
 if a cross toolchain is not installed.
 
 First launch creates `data/music.db` and a root account, writes a random password to
-`data/root_password.txt` and prints it to the terminal. root may only sign in from localhost.
+`data/root_password.txt` and prints it to the terminal. root is not restricted by login origin;
+create an admin account for daily use instead of staying on root.
 
 **Cloud builds**: `.github/workflows/build.yml` produces all three platform binaries on GitHub runners,
 so no cross toolchain is needed locally. Trigger it from Actions → build → Run workflow, or push a `v*` tag.
@@ -216,11 +266,12 @@ Other environment variables: `MUSIC_SERVER_SECRET_KEY`, `MUSIC_SERVER_ADMIN_ONLY
 ## Frontend integration
 
 **Full contract: [`docs/API.md`](docs/API.md)** — request/response shapes, permissions and error codes
-for every endpoint. Once the server runs, `http://127.0.0.1:8000/docs` also serves a quick reference.
+for every endpoint. Once the server runs, `http://127.0.0.1:8000/docs` serves the contract entry point;
+the full contract lives in `docs/API.md`.
 
 Three things to internalize before writing any client code:
 
-**1. Every response uses the same envelope**
+**1. JSON responses use the same envelope**
 
 ```json
 { "code": 0, "message": "ok", "data": { } }

@@ -1,6 +1,6 @@
 # Guobeng Music Server API 文档
 
-> 版本：2.2.1 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
+> 版本：2.3.0 · 基础路径 `/api/v1` · 接口说明页：`http://<backend>/docs`
 >
 > 音乐库层级：**艺人 Artist → 专辑 Album → 歌曲 Track**；歌词以 LRC 文本保存在歌曲上。
 > 前端服务只通过本文档的 JSON API 访问后端；安卓端同样直接调用这些接口。
@@ -33,11 +33,11 @@
 |---|---|---|
 | 200 | 成功 | 查询、更新、删除 |
 | 400 | 参数业务校验失败 | 密码强度不足、歌词格式错误 |
-| 401 | 未登录 / 令牌失效 / root 非本机 | 缺少或过期 token |
+| 401 | 未登录 / 令牌失效 | 缺少或过期 token |
 | 403 | 无权限 | 修改他人内容、普通用户上传被关闭 |
 | 404 | 资源不存在或不可见 | 私有专辑对非所有者表现为不存在 |
 | 409 | 资源冲突 | 用户名/艺人名重复、重复收藏、列表重名 |
-| 422 | 请求体/查询参数结构校验失败 | 缺少必填字段、`page_size=101` |
+| 422 | 请求体/查询参数结构校验失败 | 缺少必填字段、`page_size=101`、路径参数格式错误（`field` 为 `path`） |
 | 429 | 频率限制 | 登录失败次数过多 |
 | 500 | 服务端异常 | 未捕获错误 |
 | 503 | 后端不可用 | 前端代理无法连接后端 |
@@ -48,7 +48,9 @@
 - **refresh token**：不透明随机串，有效期 7 天，仅存 SHA-256 摘要，**每次刷新都会轮换**；
 - 登出吊销 refresh token；`logout-all` 吊销该用户全部令牌；
 - **修改密码会使该用户全部 refresh token 失效**，旧设备需要重新登录；
-- **root 账户仅允许本机**（`127.0.0.1` / `::1`）登录、刷新令牌以及携带其令牌的请求；远程访问按未登录处理。
+- **root 与普通账户一样可从任意地址登录**；建议另建 `admin` 账户日常使用，不要长期使用 root；
+- **密码哈希**：PBKDF2-HMAC-SHA256、600,000 轮、16 字节随机盐；哈希串自带算法与轮数，
+  调整参数后旧密码仍可登录，并在下次登录成功时自动重哈希。
 
 ### 1.4 权限记号
 
@@ -183,9 +185,10 @@
 （例如 `kugouid965291`），不再单独存一列 `external_id`。`q` 模糊搜索已覆盖简介，导入工具
 用 `GET /albums?q=kugouid965291` 判断「新建还是复用」，命中后再比对返回项即可。
 其它平台沿用同样形式（如 `neteaseid123`），不需要改表结构。
-2.2.0 起 `external_id` 字段与 `/albums/by-external/{id}` 接口已移除；旧库升级时服务端会自动把
-原有 `external_id` 写进空简介后再删列。2.2.1 起删列前会先清理所有引用该列的遗留索引
-（Python 版建过 `ix_` 与 `uq_` 两个），否则 SQLite 会拒绝 `DROP COLUMN`。
+2.2.0 起 `external_id` 字段与 `/albums/by-external/{id}` 接口已移除；2.2.x 升级旧库时会把原有
+`external_id` 写进空简介，再清理引用该列的所有遗留索引后删列。
+**2.3.0 已移除这段迁移程序**：数据库若还停留在 2.2.0 之前，请先运行一次 2.2.1 完成迁移，
+再升级到 2.3.0。
 
 `artist_ids` 是专辑的完整艺人列表（可选）：`artist_id` 仍是主艺人，传了 `artist_ids` 时会
 一并建立 `album_artists` 关联（主艺人自动补在首位）。上传歌曲时，歌曲的艺人会自动并入专辑艺人，
@@ -431,35 +434,45 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
 
 `GET /health` · 公开 · **根路径，不在 `/api/v1` 下**
 
-进程存活探针，顺带返回曲库规模，用于部署自检与监控抓取。
+进程存活探针。公开响应只返回 `status`；携带管理员令牌或以 `--debug` 启动时，
+才附带版本与曲库规模。
+
+公开响应：
+
+```json
+{ "code": 0, "message": "ok", "data": { "status": "running" } }
+```
+
+管理员 / debug 响应：
 
 ```json
 { "code": 0, "message": "ok",
-  "data": { "status": "running", "version": "2.2.1", "debug": false,
+  "data": { "status": "running", "version": "2.3.0", "debug": false,
             "stats": { "artists": 6, "albums": 8, "tracks": 39, "users": 1 } } }
 ```
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `status` | string | 固定 `"running"`。请求能被处理就是这个值，不代表数据库之外的东西也正常 |
-| `version` | string | 服务端版本，随发布变化（当前 `2.2.1`） |
-| `debug` | bool | 是否以 `--debug` 启动 |
-| `stats` | object | `artists` / `albums` / `tracks` / `users` 四张表的行数 |
+| `version` | string | 服务端版本，仅管理员 / debug 可见 |
+| `debug` | bool | 是否以 `--debug` 启动，仅管理员 / debug 可见 |
+| `stats` | object | `artists` / `albums` / `tracks` / `users` 四张表的行数，仅管理员 / debug 可见 |
 
 以下行为此前文档没有写清，容易误判：
 
-- **不需要认证**：不带 `Authorization` 也能访问，也不受 root「仅本机」限制；
+- **不需要认证**：不带 `Authorization` 也能访问；
 - **`/api/v1/health` 返回 404**：它和业务接口不是同一个前缀，客户端不要拼 Base URL；
-- **数据库读不出来时不报 5xx**：任一统计查询失败，`stats` 退化成 `{}`，`status` 仍是
-  `"running"`，HTTP 仍是 200。监控要以 `stats` 是否为空来判断，不能只看状态码；
+- **数据库读不出来时不报 5xx**：管理员 / debug 模式下任一统计查询失败，`stats` 退化成 `{}`，
+  `status` 仍是 `"running"`，HTTP 仍是 200。监控要以 `stats` 是否为空来判断，不能只看状态码；
 - 只证明「进程能响应 + 数据库可读」，不检查磁盘空间、媒体目录与外部依赖；
-- 每次都实时执行四条 `COUNT(*)`，曲库很大时会有额外开销，探针间隔不要太短。
+- 管理员 / debug 模式每次都实时执行四条 `COUNT(*)`，曲库很大时会有额外开销，探针间隔不要太短。
 
 ### 11.2 静态媒体
 
 `GET /media/{path}` · 公开 · **根路径**
 
 封面、头像、音频文件。支持 `Range` 请求（`206 Partial Content`），音频可拖动/断点续传。
+越界 `Range` 返回 `416`，带 `Content-Range: bytes */总长` 和统一信封的 JSON body。
 私有专辑只限制 JSON 接口可见性；媒体 URL 仍是随机文件名，请勿泄露私有资源链接。
 
 ---
@@ -489,7 +502,7 @@ App 可直接解析原始 LRC；歌词面板按时间高亮。后端不提供第
 - 数据库为全新 SQLite（`data/music.db`），不读取旧 Python 库；媒体目录仍为
   `data/media/{covers,avatars,audio}`。
 - 首次启动创建 root 超级管理员，随机密码写入 `data/root_password.txt` 并打印到终端；
-  root 仅允许本机登录。
+  root 不受登录来源限制，建议另建 `admin` 账户日常使用。
 - 多艺人：`track_artists` / `album_artists` 是唯一事实来源；新建专辑会把主艺人写入
   `album_artists`，上传歌曲时合作艺人会自动并入专辑艺人。
 - 配置文件 `config.json`（启动目录，唯一配置文件）：

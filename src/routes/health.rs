@@ -1,9 +1,10 @@
-//! 健康检查：进程存活 + 曲库规模。
+//! 健康检查：公开探活，版本与曲库规模仅管理员可见。
 
 use axum::{extract::State, routing::get, Router};
 use serde_json::{json, Value};
 
 use crate::error::{ok, ApiResult};
+use crate::extract::OptionalUser;
 use crate::settings::API_VERSION;
 use crate::state::AppState;
 
@@ -11,7 +12,16 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/health", get(health))
 }
 
-async fn health(State(state): State<AppState>) -> ApiResult<crate::error::ApiOk<Value>> {
+async fn health(
+    State(state): State<AppState>,
+    OptionalUser(user): OptionalUser,
+) -> ApiResult<crate::error::ApiOk<Value>> {
+    let privileged = state.settings.debug
+        || user.map(|value| value.is_admin()).unwrap_or(false);
+    if !privileged {
+        return Ok(ok(json!({ "status": "running" })));
+    }
+
     let mut stats = serde_json::Map::new();
     let mut healthy = true;
     for (key, table) in [

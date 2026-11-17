@@ -90,7 +90,12 @@ async fn serve(
     let (status, start, end) = match range {
         None => (StatusCode::OK, 0u64, length.saturating_sub(1)),
         Some(Err(())) => {
-            let mut response = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+            // 媒体层同样遵守统一信封：416 带 JSON body，同时保留 RFC 要求的 Content-Range。
+            let mut response = AppError::new(
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                "请求范围不可满足",
+            )
+            .into_response();
             response.headers_mut().insert(
                 header::CONTENT_RANGE,
                 HeaderValue::from_str(&format!("bytes */{length}"))
